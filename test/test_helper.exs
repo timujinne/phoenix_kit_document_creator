@@ -50,18 +50,27 @@ repo_available =
       # Build the schema directly from core's versioned migrations —
       # same call the host app makes in production. Core's V40 creates
       # the `uuid-ossp` / `pgcrypto` extensions + `uuid_generate_v7()`
-      # function; V03/V04 create `phoenix_kit_settings`; V86/V94 create
-      # this module's `phoenix_kit_doc_*` tables; V90 creates
+      # function; V03/V04 create `phoenix_kit_settings`; V86/V94/V110
+      # create this module's `phoenix_kit_doc_*` tables; V90 creates
       # `phoenix_kit_activities`. No module-owned DDL.
       #
+      # `ensure_current/2` (core 1.7.105+ / phoenix_kit#515) re-applies
+      # any newly-shipped Vxxx migrations on every boot by passing a
+      # fresh wall-clock version to Ecto.Migrator. Replaces the
+      # `Ecto.Migrator.run([{0, PhoenixKit.Migration}], :up, all: true)`
+      # pattern, which silently stopped re-applying once `0` was
+      # recorded in `schema_migrations` — see
+      # `dev_docs/migration_cleanup.md` for the staleness story.
+      #
       # Standalone runs against Hex `phoenix_kit ~> 1.7` may fail at
-      # boot if the published Hex version pre-dates a column this
-      # module's schemas reference — that's expected. The canonical
-      # test channel for this module is via `phoenix_kit_parent`
-      # (path-dep `override: true` resolves `phoenix_kit` to the local
-      # checkout, which has the latest schema). See ~/.claude memory
+      # boot if the published Hex version pre-dates `ensure_current/2`
+      # itself or a column this module's schemas reference. CI greens
+      # once core 1.7.105 publishes and `mix deps.update phoenix_kit`
+      # bumps the lock. The canonical local test channel is via
+      # `phoenix_kit_parent` (path-dep `override: true` resolves
+      # `phoenix_kit` to the local checkout). See ~/.claude memory
       # `feedback_run_tests_via_parent.md`.
-      Ecto.Migrator.run(TestRepo, [{0, PhoenixKit.Migration}], :up, all: true, log: false)
+      PhoenixKit.Migration.ensure_current(TestRepo, log: false)
 
       Ecto.Adapters.SQL.Sandbox.mode(TestRepo, :manual)
       true

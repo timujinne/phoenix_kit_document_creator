@@ -188,6 +188,56 @@ defmodule PhoenixKitDocumentCreator.Schemas.TemplateTest do
 
       assert cs.valid?
     end
+
+    test "does NOT cast :language — user-set values survive Drive sync" do
+      # `sync_changeset/2` deliberately omits :language from its cast
+      # allowlist so an admin's locale choice isn't clobbered by the
+      # next walker pass (which only carries Drive-provided fields).
+      cs =
+        Template.sync_changeset(
+          %Template{language: "et-EE"},
+          %{name: "T", google_doc_id: "abc", language: "ja"}
+        )
+
+      assert cs.valid?
+      # Language change is dropped on the floor — old value retained.
+      refute Map.has_key?(cs.changes, :language)
+    end
+  end
+
+  describe "language field (V110)" do
+    test "accepts a full locale code via changeset/2" do
+      cs = changeset(%{name: "T", language: "en-US"})
+      assert cs.valid?
+      assert cs.changes.language == "en-US"
+    end
+
+    test "accepts a base locale code (e.g. \"ja\")" do
+      cs = changeset(%{name: "T", language: "ja"})
+      assert cs.valid?
+      assert cs.changes.language == "ja"
+    end
+
+    test "accepts nil (clearing the language)" do
+      cs = changeset(%{name: "T", language: nil})
+      assert cs.valid?
+    end
+
+    test "accepts empty string (cast to nil for string fields per Ecto default)" do
+      cs = changeset(%{name: "T", language: ""})
+      assert cs.valid?
+    end
+
+    test "rejects language longer than 10 chars (matches V110 column size)" do
+      cs = changeset(%{name: "T", language: String.duplicate("x", 11)})
+      refute cs.valid?
+      assert %{language: ["should be at most 10 character(s)"]} = errors_on(cs)
+    end
+
+    test "language at exactly 10 chars is valid (boundary)" do
+      cs = changeset(%{name: "T", language: String.duplicate("x", 10)})
+      assert cs.valid?
+    end
   end
 
   defp errors_on(changeset) do

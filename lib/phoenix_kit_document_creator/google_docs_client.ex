@@ -97,10 +97,18 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   def uuid?(str), do: is_binary(str) and Regex.match?(@uuid_pattern, str)
 
   # Legacy `"google"` / `"google:name"` values predate the move to uuid-
-  # based references. Look up the matching integration row, rewrite the
-  # setting to its uuid, and return the uuid. If nothing matches (the
-  # integration was deleted or never existed), null the setting and
-  # return nil so callers see a clean "not configured" state.
+  # based references. Look up the integration row matching the exact
+  # `provider:name` shape, rewrite the setting to its uuid, and return
+  # the uuid. If no row matches, null the setting and return nil so
+  # callers see a clean "not configured" state.
+  #
+  # **Symmetric with `PhoenixKitDocumentCreator.migrate_legacy_connection_references/0`**:
+  # both paths require an exact `provider:name` match. The previous
+  # "any connected row for this provider" fallback was removed
+  # because it silently picked between multi-account installs (a user
+  # with `google:work` AND `google:personal` who had `"google"` in
+  # settings would have one of them chosen arbitrarily). Failing
+  # cleanly forces the admin to re-select via the integration picker.
   defp migrate_legacy_connection(legacy_key) do
     {provider_key, name} =
       case String.split(legacy_key, ":", parts: 2) do
@@ -108,27 +116,70 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
         [p] -> {p, "default"}
       end
 
-    candidate =
-      integrations_backend().get_integration("#{provider_key}:#{name}")
-
-    case candidate do
+    case integrations_backend().get_integration("#{provider_key}:#{name}") do
       {:ok, %{"name" => _} = data} ->
-        # Matched directly. Find this row's uuid by scanning the
-        # provider's connections and persist it.
         case find_uuid_for_data(provider_key, data) do
-          nil -> rewrite_setting(nil)
-          uuid -> rewrite_setting(uuid)
+          nil ->
+            log_legacy_resolution_failed(legacy_key, :uuid_not_found)
+            rewrite_setting(nil)
+
+          uuid ->
+            log_legacy_resolution_succeeded(legacy_key, uuid)
+            rewrite_setting(uuid)
         end
 
       _ ->
-        # No exact match. Fall back to "any connected row for this
-        # provider" — same shape as the legacy resolver chain — then
-        # persist its uuid so the migration is one-shot.
-        case integrations_backend().list_connections(provider_key) do
-          [%{uuid: uuid} | _] -> rewrite_setting(uuid)
-          _ -> rewrite_setting(nil)
-        end
+        log_legacy_resolution_failed(legacy_key, :no_exact_match)
+        rewrite_setting(nil)
     end
+  end
+
+  defp log_legacy_resolution_succeeded(legacy_key, uuid) do
+    Logger.info("[GoogleDocsClient] migrated legacy '#{legacy_key}' → uuid=#{inspect(uuid)}")
+
+    log_lazy_migration_activity(:reference_migrated, %{
+      "old_value" => legacy_key,
+      "new_uuid" => uuid
+    })
+  end
+
+  defp log_legacy_resolution_failed(legacy_key, reason) do
+    Logger.warning(
+      "[GoogleDocsClient] cannot resolve legacy '#{legacy_key}': " <>
+        "reason=#{inspect(reason)}; clearing setting"
+    )
+
+    log_lazy_migration_activity(:reference_migration_failed, %{
+      "old_value" => legacy_key,
+      "reason" => inspect(reason)
+    })
+  end
+
+  defp log_lazy_migration_activity(action_atom, metadata) do
+    if Code.ensure_loaded?(PhoenixKit.Activity) do
+      PhoenixKit.Activity.log(%{
+        action: "integration.legacy_migrated",
+        module: "document_creator",
+        mode: "auto",
+        resource_type: "integration",
+        metadata:
+          Map.merge(metadata, %{
+            "migration_kind" => Atom.to_string(action_atom),
+            "actor_role" => "system",
+            "trigger" => "lazy_on_read"
+          })
+      })
+    end
+
+    :ok
+  rescue
+    e ->
+      Logger.warning(fn ->
+        "[GoogleDocsClient] activity log failed during lazy legacy migration: " <>
+          "kind=#{action_atom}, exception=#{inspect(e.__struct__)}"
+      end)
+
+      :ok
   end
 
   defp find_uuid_for_data(provider_key, data) do
@@ -366,36 +417,49 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
     documents_path = build_full_path(config.documents_path, config.documents_name)
     deleted_path = build_full_path(config.deleted_path, config.deleted_name)
 
-    # Resolve all four folder paths in parallel to minimize sequential API calls
-    tasks = [
-      Task.async(fn -> ensure_folder_path(templates_path) end),
-      Task.async(fn -> ensure_folder_path(documents_path) end),
-      Task.async(fn -> ensure_folder_path("#{deleted_path}/#{config.templates_name}") end),
-      Task.async(fn -> ensure_folder_path("#{deleted_path}/#{config.documents_name}") end)
+    # Resolve all four folder paths in parallel to minimize sequential API calls.
+    #
+    # `Task.Supervisor.async_stream_nolink/4` under `PhoenixKit.TaskSupervisor`
+    # supersedes the previous `Task.async/1` shape. Two reasons:
+    #
+    # 1. **Caller-exit cleanup**: bare `Task.async/1` links the spawned task
+    #    to the calling process. If the LV exits mid-await (admin closes
+    #    the tab), `Task.await_many/2`'s timeout path is never reached
+    #    and `Task.shutdown` doesn't run — orphans are blocked on the
+    #    remote Drive call until the HTTP timeout fires. Under the
+    #    supervisor with `:nolink`, the calling process exiting causes
+    #    the supervisor to clean the children automatically.
+    #
+    # 2. **No more `catch :exit, _`**: `async_stream` reports per-task
+    #    failure via `{:exit, reason}` tuples in the stream, so the
+    #    timeout-vs-success branch is plain pattern matching.
+    paths = [
+      templates_path,
+      documents_path,
+      "#{deleted_path}/#{config.templates_name}",
+      "#{deleted_path}/#{config.documents_name}"
     ]
 
-    # `Task.await_many/2` signals timeouts via `exit/1` (sent through
-    # the link), not a raised exception — so this must be `catch :exit`,
-    # not `rescue`. Pre-fix the timeout/crash path was dead code: the
-    # LV process exited, the supervisor restarted it, and the nil
-    # fallback below never ran.
-    results =
-      try do
-        Task.await_many(tasks, 30_000)
-      catch
-        :exit, reason ->
-          Logger.error("Document Creator folder discovery failed: #{inspect(reason)}")
-          Enum.each(tasks, &Task.shutdown(&1, :brutal_kill))
-          [nil, nil, nil, nil]
-      end
-
     [templates_id, documents_id, deleted_templates_id, deleted_documents_id] =
-      Enum.map(results, fn
-        {:ok, id} ->
+      Task.Supervisor.async_stream_nolink(
+        PhoenixKit.TaskSupervisor,
+        paths,
+        fn path -> ensure_folder_path(path) end,
+        timeout: 30_000,
+        on_timeout: :kill_task,
+        ordered: true,
+        max_concurrency: 4
+      )
+      |> Enum.map(fn
+        {:ok, {:ok, id}} ->
           id
 
-        other ->
-          if other != nil, do: Logger.warning("Folder discovery failed: #{inspect(other)}")
+        {:ok, {:error, reason}} ->
+          Logger.warning("Folder discovery failed: #{inspect(reason)}")
+          nil
+
+        {:exit, reason} ->
+          Logger.error("Document Creator folder discovery failed: #{inspect(reason)}")
           nil
       end)
 

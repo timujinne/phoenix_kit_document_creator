@@ -621,5 +621,98 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLiveTest do
       render_click(view, "silent_refresh")
       assert Process.alive?(view.pid)
     end
+
+    # ── set_template_language event coverage ───────────────────────────
+
+    test "set_template_language ignores unknown file_id (verify_known_file guard)",
+         %{conn: conn} do
+      scope = fake_scope()
+      conn = put_test_scope(conn, scope)
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator/templates")
+
+      # File not seeded into the LV's known_file_ids — the handler
+      # guard rejects it before touching the DB. Pre-rejection there
+      # is no DB row to update, no broadcast, no activity log.
+      render_click(view, "set_template_language", %{"id" => "unknown", "language" => "en-US"})
+
+      assert Process.alive?(view.pid)
+    end
+
+    test "set_template_language threads actor_uuid + flips DB language + activity-logs",
+         %{conn: conn} do
+      scope = fake_scope()
+      actor_uuid = scope.user.uuid
+
+      # Drive the templates list view with one known template injected
+      # via the LV's `:sync_complete` path. We seed the DB row first,
+      # then trigger the LV's normal sync_complete handler which
+      # repopulates assigns from `list_templates_from_db/0`.
+      file_id = "lv-tpl-lang-#{System.unique_integer([:positive])}"
+
+      {:ok, _} =
+        Documents.upsert_template_from_drive(%{
+          "id" => file_id,
+          "name" => "Localised Template"
+        })
+
+      conn = put_test_scope(conn, scope)
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator/templates")
+
+      # Force a sync_complete cycle so the DB-backed template row
+      # lands in `:templates` AND `:known_file_ids` for the
+      # verify_known_file guard.
+      send(view.pid, :sync_complete)
+      _ = render(view)
+
+      render_click(view, "set_template_language", %{
+        "id" => file_id,
+        "language" => "et-EE"
+      })
+
+      # Activity log captures the from→to transition with the actor.
+      assert_activity_logged("template.language_updated",
+        actor_uuid: actor_uuid,
+        metadata_has: %{
+          "google_doc_id" => file_id,
+          "language_to" => "et-EE"
+        }
+      )
+    end
+
+    test "set_template_language clears the language when language is empty string",
+         %{conn: conn} do
+      scope = fake_scope()
+      actor_uuid = scope.user.uuid
+
+      file_id = "lv-tpl-clear-#{System.unique_integer([:positive])}"
+
+      {:ok, _} =
+        Documents.upsert_template_from_drive(%{
+          "id" => file_id,
+          "name" => "Was Set"
+        })
+
+      # Pre-seed a language so we're testing the clear path explicitly.
+      {:ok, _} = Documents.update_template_language(file_id, "ja")
+
+      conn = put_test_scope(conn, scope)
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator/templates")
+
+      send(view.pid, :sync_complete)
+      _ = render(view)
+
+      render_click(view, "set_template_language", %{
+        "id" => file_id,
+        "language" => ""
+      })
+
+      assert_activity_logged("template.language_updated",
+        actor_uuid: actor_uuid,
+        metadata_has: %{
+          "google_doc_id" => file_id,
+          "language_from" => "ja"
+        }
+      )
+    end
   end
 end

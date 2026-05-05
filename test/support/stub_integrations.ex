@@ -12,10 +12,27 @@ defmodule PhoenixKitDocumentCreator.Test.StubIntegrations do
         PhoenixKitDocumentCreator.Test.StubIntegrations
       )
 
-  And install per-test responses via the process dictionary helpers
-  below. The dispatcher keeps test setup small — most LV mount tests
-  just need `connected!()` and a couple of canned responses for the
-  Drive endpoints they hit.
+  And install per-test responses via `connected!/1` and `stub_request/3`.
+  The dispatcher keeps test setup small — most LV mount tests just
+  need `connected!()` and a couple of canned responses for the Drive
+  endpoints they hit.
+
+  ## Concurrency contract — `async: false` REQUIRED
+
+  Test files using this stub **must** declare `use ExUnit.Case, async: false`
+  (or `use DataCase, async: false`). The stub is backed by a single
+  named ETS table (`:pkdc_stub_integrations`); the named table is
+  required because the LiveView process must be able to read state
+  set by the test process, and process-dictionary or per-pid storage
+  doesn't cross the test→LV process boundary. Two concurrent tests
+  writing to the same table would race.
+
+  `claim!/0` runs at the top of `connected!/1` / `stub_request/3` /
+  `seed_connection!/2` and registers the calling pid as the table
+  owner; subsequent calls from a different pid raise loudly with a
+  `:concurrent_stub_use` exit so the violation is impossible to
+  miss. Use `release!/0` from `on_exit` to make the table available
+  for the next test.
 
   Production behaviour is unchanged — the resolver in
   `GoogleDocsClient.integrations_backend/0` defaults to
@@ -30,9 +47,56 @@ defmodule PhoenixKitDocumentCreator.Test.StubIntegrations do
   @doc "Mark the stub as 'connected' — `get_integration/1` returns `{:ok, _}`."
   @spec connected!(String.t()) :: :ok
   def connected!(email \\ "test@example.com") do
-    ensure_table()
+    claim!()
     :ets.insert(@ets_table, {:connected_email, email})
     seed_active_integration_setting()
+    :ok
+  end
+
+  @doc """
+  Claim ownership of the stub for the calling pid. Raises if another
+  test (different pid) is already holding it. Called automatically
+  by `connected!/1`, `stub_request/3`, and `seed_connection!/2`.
+  """
+  @spec claim!() :: :ok
+  def claim! do
+    ensure_table()
+    me = self()
+
+    case :ets.lookup(@ets_table, :owner_pid) do
+      [] ->
+        :ets.insert(@ets_table, {:owner_pid, me})
+        :ok
+
+      [{:owner_pid, ^me}] ->
+        :ok
+
+      [{:owner_pid, other}] ->
+        if Process.alive?(other) do
+          raise """
+          PhoenixKitDocumentCreator.Test.StubIntegrations is already in use by \
+          pid=#{inspect(other)}; pid=#{inspect(me)} attempted concurrent access. \
+          The stub is backed by a single named ETS table; tests using it must \
+          declare `async: false`.
+          """
+        else
+          :ets.insert(@ets_table, {:owner_pid, me})
+          :ok
+        end
+    end
+  end
+
+  @doc """
+  Release ownership of the stub. Call from `on_exit/2` so the next
+  test can claim it. Also clears all per-test state.
+  """
+  @spec release!() :: :ok
+  def release! do
+    case :ets.info(@ets_table) do
+      :undefined -> :ok
+      _ -> :ets.delete_all_objects(@ets_table)
+    end
+
     :ok
   end
 
@@ -61,7 +125,7 @@ defmodule PhoenixKitDocumentCreator.Test.StubIntegrations do
   @doc "Mark the stub as disconnected (default state)."
   @spec disconnected!() :: :ok
   def disconnected! do
-    ensure_table()
+    claim!()
     :ets.delete(@ets_table, :connected_email)
     :ok
   end
@@ -77,36 +141,55 @@ defmodule PhoenixKitDocumentCreator.Test.StubIntegrations do
   @spec stub_request(atom(), String.t() | Regex.t(), canned()) :: :ok
   def stub_request(method, url_pattern, response)
       when is_atom(method) and (is_binary(url_pattern) or is_struct(url_pattern, Regex)) do
-    ensure_table()
+    claim!()
     rules = rules()
     :ets.insert(@ets_table, {:rules, rules ++ [{method, url_pattern, response}]})
     :ok
   end
 
-  @doc "Reset all stub state."
+  @doc "Reset all stub state. Equivalent to `release!/0` — kept for back-compat."
   @spec reset!() :: :ok
-  def reset! do
-    ensure_table()
-    :ets.delete_all_objects(@ets_table)
-    :ok
-  end
+  def reset!, do: release!()
 
   # ── PhoenixKit.Integrations contract ────────────────────────────────
 
   @spec get_integration(String.t()) :: {:ok, map()} | {:error, atom()}
-  def get_integration(_provider_key) do
-    case connected_email() do
-      nil ->
-        {:error, :not_configured}
+  def get_integration(provider_key) do
+    # If the caller asked for a specific `provider:name` and a matching
+    # seeded connection exists, return its data shape (matches the real
+    # `PhoenixKit.Integrations.get_integration/1` response — the JSONB
+    # row's blob, including `"name"` / `"provider"` keys). Otherwise
+    # fall back to the connected-email shape for legacy "any" lookups.
+    case lookup_connection_by_key(provider_key) do
+      %{data: data} = _conn ->
+        {:ok, data}
 
-      email ->
-        {:ok,
-         %{
-           "external_account_id" => email,
-           "metadata" => %{"connected_email" => email}
-         }}
+      nil ->
+        case connected_email() do
+          nil ->
+            {:error, :not_configured}
+
+          email ->
+            {:ok,
+             %{
+               "external_account_id" => email,
+               "metadata" => %{"connected_email" => email}
+             }}
+        end
     end
   end
+
+  defp lookup_connection_by_key(key) when is_binary(key) do
+    case String.split(key, ":", parts: 2) do
+      [provider, name] when name != "" ->
+        list_connections(provider) |> Enum.find(fn c -> c.name == name end)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp lookup_connection_by_key(_), do: nil
 
   @spec get_credentials(String.t()) :: {:ok, map()} | {:error, atom()}
   def get_credentials(_provider_key) do
@@ -137,7 +220,7 @@ defmodule PhoenixKitDocumentCreator.Test.StubIntegrations do
   """
   @spec seed_connection!(String.t(), %{uuid: String.t(), name: String.t(), data: map()}) :: :ok
   def seed_connection!(provider_key, conn) do
-    ensure_table()
+    claim!()
 
     existing =
       case :ets.lookup(@ets_table, {:connections, provider_key}) do

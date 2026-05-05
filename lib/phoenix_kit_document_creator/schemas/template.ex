@@ -29,6 +29,7 @@ defmodule PhoenixKitDocumentCreator.Schemas.Template do
     field(:google_doc_id, :string)
     field(:path, :string)
     field(:folder_id, :string)
+    field(:language, :string)
 
     field(:content_html, :string, default: "")
     field(:content_css, :string, default: "")
@@ -64,6 +65,7 @@ defmodule PhoenixKitDocumentCreator.Schemas.Template do
     :google_doc_id,
     :path,
     :folder_id,
+    :language,
     :content_html,
     :content_css,
     :content_native,
@@ -82,6 +84,7 @@ defmodule PhoenixKitDocumentCreator.Schemas.Template do
     |> validate_required(@required_fields)
     |> validate_length(:name, min: 1, max: 255)
     |> validate_length(:slug, max: 255)
+    |> validate_length(:language, max: 10)
     |> validate_inclusion(:status, @statuses)
     |> maybe_generate_slug()
     |> unique_constraint(:slug)

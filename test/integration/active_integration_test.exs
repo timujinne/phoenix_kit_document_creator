@@ -88,7 +88,7 @@ defmodule PhoenixKitDocumentCreator.Integration.ActiveIntegrationTest do
       assert GoogleDocsClient.active_integration_uuid() == uuid
     end
 
-    test ~s|legacy bare "google" — falls back to the first available connection| do
+    test ~s|legacy bare "google" — resolves to "google:default" when a matching connection exists| do
       uuid = "019d0000-0000-7000-8000-000000000003"
 
       StubIntegrations.seed_connection!("google", %{
@@ -99,14 +99,33 @@ defmodule PhoenixKitDocumentCreator.Integration.ActiveIntegrationTest do
 
       set_connection_setting("google")
 
-      # `migrate_legacy_connection/1` first tries
-      # `get_integration("google:default")` which the stub doesn't
-      # answer (it's keyed off connected_email, not specific keys),
-      # so it falls through to the `list_connections/1` first-row
-      # path and persists that uuid.
+      # Bare `"google"` is parsed as `provider="google", name="default"`
+      # (same heuristic as the boot-time sweep in
+      # `migrate_legacy_connection_references/0`). Both paths now
+      # require an exact match; symmetric behavior closes the
+      # "silently picks first row" footgun for multi-account installs.
       assert GoogleDocsClient.active_integration_uuid() == uuid
 
       assert %{"google_connection" => ^uuid} = Settings.get_json_setting(@settings_key, %{})
+    end
+
+    test ~s|legacy bare "google" — clears setting when no "default" connection exists| do
+      # Pre-fix this scenario silently picked the first connection of
+      # any name. Post-fix the lookup fails loudly and the setting
+      # gets cleared, forcing the admin to re-pick via the
+      # integration picker. Asymmetry between boot and lazy paths
+      # closed by phoenix_kit_document_creator follow-up to PR #12 §1.2.
+      StubIntegrations.seed_connection!("google", %{
+        uuid: "019d0000-0000-7000-8000-000000000099",
+        name: "personal",
+        data: %{"name" => "personal", "provider" => "google"}
+      })
+
+      set_connection_setting("google")
+
+      assert GoogleDocsClient.active_integration_uuid() == nil
+
+      refute Map.has_key?(Settings.get_json_setting(@settings_key, %{}), "google_connection")
     end
 
     test "legacy value with no resolvable target → nil + setting cleared" do

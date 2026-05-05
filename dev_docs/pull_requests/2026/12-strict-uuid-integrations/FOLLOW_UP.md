@@ -72,10 +72,75 @@ red herrings.
 
 | Finding | Reason |
 |---------|--------|
-| §1.2 — boot vs lazy fallback asymmetry for bare `"google"` | Behavior change. Worth a discussion: do we want lazy to *also* clear+log instead of silently picking the first connection, or do we want boot to mirror lazy's first-row pick? Either choice is defensible; pick one explicitly. |
-| §1.3 — `already_migrated?/0` queries via legacy string key | Coupled to core's continued back-compat for `provider:name` lookup. Switch to `find_uuid_by_provider_name/1` once the floor `phoenix_kit` version is bumped past V107. |
-| §1.7 — Lazy on-read writes mutate the DB during GET requests | Documented in code already; relevant only if reads ever go to a replica. No code change needed; just keep in mind. |
-| §1.9 — Test stub uses `:named_table` ETS (implicit global) | Today's usage is `async: false` so the named-table coupling is invisible. Forward-looking only — re-key per-test if a second consumer joins. |
+| ~~§1.2 — boot vs lazy fallback asymmetry for bare `"google"`~~ | **Closed in Batch 2 (2026-05-05).** Picked the conservative branch: both paths require an exact `provider:name` match; on no match the setting is cleared and the admin gets the "not configured" prompt. The "any connected row of this provider" silent-pick fallback is gone. Activity log + warning fire on both paths' failure side. |
+| ~~§1.3 — `already_migrated?/0` queries via legacy string key~~ | **Closed in Batch 2 (2026-05-05).** Prefers `Integrations.find_uuid_by_provider_name/1` (core 1.7.105+) via a `function_exported?/3` runtime guard + `apply/3` to dodge the compile-time warning on older cores. Falls back to the legacy `provider:name` string lookup. The fallback can be deleted once `~> 1.7.105` is the floor. |
+| ~~§1.7 — Lazy on-read writes mutate the DB during GET requests~~ | Reaffirmed (no change). Documented in code; relevant only if reads ever go to a replica. Persists as a forward-looking caveat; not actionable today. |
+| ~~§1.9 — Test stub uses `:named_table` ETS (implicit global)~~ | **Closed in Batch 2 (2026-05-05).** Subsumed by PR #11's M2 fix — `claim!/0` / `release!/0` enforce `async: false` at runtime via an owner-pid registration. The named table stays (cross-process LV→test boundary requires it) but concurrent access raises loudly. |
+
+## Batch 2 — close all deferred findings 2026-05-05
+
+Issue #13 (per-template language picker) bundled the residual
+deferred decisions from Batch 1 into the same PR. Each was
+closed mechanically:
+
+### §1.2 — Boot vs lazy fallback symmetry restored
+
+`GoogleDocsClient.migrate_legacy_connection/1` (the lazy path)
+no longer falls back to picking the first connection of any name
+when the exact `provider:name` match fails. Pre-fix, an admin
+with `"google"` stored in `document_creator_settings` AND a
+multi-account install (`google:work` + `google:personal`) would
+have one of those connections silently chosen. Post-fix, the
+lookup either finds an exact match (cleanly migrates the
+setting to that uuid) or fails loudly (clears the setting,
+admin sees the integration picker).
+
+Both paths now also emit `integration.legacy_migrated` activity
+rows on BOTH success and failure (with `migration_kind=
+reference_migration_failed` on the failure side). The boot path
+in `phoenix_kit_document_creator.ex:resolve_and_persist/1`
+gained the failure-side activity log too. Symmetry rule:
+nothing the legacy migration does is unobservable in the audit
+feed.
+
+### §1.3 — Uuid-strict already_migrated?
+
+`already_migrated?/0` now prefers
+`Integrations.find_uuid_by_provider_name/1` (core 1.7.105+)
+over the legacy `get_integration("provider:name")` shim. Runtime
+guard via `function_exported?/3`; the `apply/3` call dodges the
+compile-time "undefined function" warning on older cores. The
+fallback arm can be removed once core 1.7.105 is the floor in
+`mix.exs`.
+
+### §1.9 — StubIntegrations claim/release
+
+The PR #11 M2 fix landed in this same commit batch and
+subsumes §1.9 — `claim!/0` registers the calling pid as the ETS
+table's owner; concurrent calls from a different live pid raise
+`:concurrent_stub_use`. Tests using the stub must already
+declare `async: false`; the runtime check makes accidental
+concurrent use impossible to miss instead of silently racing.
+
+### Files touched (Batch 2)
+
+| File | Change |
+|------|--------|
+| `lib/phoenix_kit_document_creator/google_docs_client.ex` | §1.2 (drop silent fallback + audit log on failure) |
+| `lib/phoenix_kit_document_creator.ex` | §1.2 (audit log on boot-side failure) + §1.3 (find_uuid_by_provider_name preference) |
+| `test/support/stub_integrations.ex` | §1.9 (claim/release) — landed under PR #11 M2 |
+| `test/integration/active_integration_test.exs` | Updated two pre-existing tests to match new symmetric behavior; new test for the "no exact match" failure branch |
+
+### Verification (Batch 2)
+
+- `mix precommit` clean
+- `mix test` — 414 tests, 0 failures, 4 excluded; 5/5 random
+  seeds stable
+- Browser smoke on `phoenix_kit_parent` confirms the symmetric
+  behavior: bare `"google"` setting with no `"default"`-named
+  connection clears the setting and renders the "Google Account
+  Not Connected" empty state, instead of silently picking a
+  random connection.
 
 ## Verification
 

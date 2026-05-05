@@ -685,6 +685,115 @@ if Code.ensure_loaded?(PhoenixKitDocumentCreator.DataCase) do
     end
 
     # ===========================================================================
+    # update_template_language (V110)
+    # ===========================================================================
+
+    describe "update_template_language/3" do
+      setup do
+        {:ok, template} =
+          Documents.upsert_template_from_drive(%{"id" => "lang_t1", "name" => "Localised"})
+
+        %{template: template}
+      end
+
+      test "sets language on an existing template", %{template: template} do
+        assert {:ok, updated} = Documents.update_template_language("lang_t1", "et-EE")
+        assert updated.language == "et-EE"
+
+        # Re-read confirms persistence
+        reloaded = Repo.get!(Template, template.uuid)
+        assert reloaded.language == "et-EE"
+      end
+
+      test "overwrites a previously-set language" do
+        {:ok, _} = Documents.update_template_language("lang_t1", "ja")
+        {:ok, updated} = Documents.update_template_language("lang_t1", "en-US")
+        assert updated.language == "en-US"
+      end
+
+      test "clears language when passed nil" do
+        {:ok, _} = Documents.update_template_language("lang_t1", "et")
+        {:ok, cleared} = Documents.update_template_language("lang_t1", nil)
+        assert is_nil(cleared.language)
+      end
+
+      test "clears language when passed empty string" do
+        {:ok, _} = Documents.update_template_language("lang_t1", "et")
+        {:ok, cleared} = Documents.update_template_language("lang_t1", "")
+        assert is_nil(cleared.language)
+      end
+
+      test "returns {:error, :not_found} for unknown google_doc_id" do
+        assert {:error, :not_found} =
+                 Documents.update_template_language("does-not-exist", "en-US")
+      end
+
+      test "returns {:error, changeset} when language exceeds 10 chars" do
+        assert {:error, %Ecto.Changeset{valid?: false} = cs} =
+                 Documents.update_template_language("lang_t1", String.duplicate("x", 11))
+
+        # Inline `errors_on` flatten — keeps the integration suite free
+        # of a workspace-level helper for this single assertion.
+        flat =
+          Ecto.Changeset.traverse_errors(cs, fn {msg, opts} ->
+            Regex.replace(~r"%{(\w+)}", msg, fn _, key ->
+              opts |> Keyword.get(String.to_existing_atom(key), key) |> to_string()
+            end)
+          end)
+
+        assert %{language: ["should be at most 10 character(s)"]} = flat
+      end
+
+      test "logs template.language_updated with from/to on success", %{template: template} do
+        actor_uuid = Ecto.UUID.generate()
+
+        {:ok, _} = Documents.update_template_language("lang_t1", nil)
+        {:ok, _} = Documents.update_template_language("lang_t1", "ja", actor_uuid: actor_uuid)
+
+        row =
+          assert_activity_logged("template.language_updated",
+            actor_uuid: actor_uuid,
+            metadata_has: %{
+              "name" => template.name,
+              "google_doc_id" => "lang_t1",
+              "language_to" => "ja"
+            }
+          )
+
+        # `language_from` should be nil (template just got cleared above)
+        assert is_nil(row.metadata["language_from"])
+      end
+
+      test "logs failure-side audit row when google_doc_id is unknown" do
+        actor_uuid = Ecto.UUID.generate()
+
+        assert {:error, :not_found} =
+                 Documents.update_template_language("missing-id", "ja", actor_uuid: actor_uuid)
+
+        row =
+          assert_activity_logged("template.language_updated",
+            actor_uuid: actor_uuid,
+            metadata_has: %{
+              "google_doc_id" => "missing-id",
+              "language_to" => "ja",
+              "db_pending" => true
+            }
+          )
+
+        # No name/from on the failure side because the row never existed
+        assert is_nil(row.metadata["name"])
+      end
+
+      test "broadcasts files_changed on success" do
+        :ok = Phoenix.PubSub.subscribe(PhoenixKit.PubSub, Documents.pubsub_topic())
+
+        {:ok, _} = Documents.update_template_language("lang_t1", "et-EE")
+
+        assert_receive {:files_changed, _from_pid}, 200
+      end
+    end
+
+    # ===========================================================================
     # detect_variables (DB persistence)
     # ===========================================================================
 

@@ -227,10 +227,30 @@ defmodule PhoenixKitDocumentCreator do
       {:error, e}
   end
 
+  # Prefer the uuid-strict `find_uuid_by_provider_name/1` (core 1.7.105+)
+  # so the check matches the same lookup shape we use elsewhere
+  # (`migrate_legacy_connection_references/0`, the consumer pattern in
+  # AGENTS.md). On older cores that pre-date the helper, fall back to
+  # the legacy `provider:name` string lookup against `get_integration/1`'s
+  # dual-input read shim. The fallback can be deleted once
+  # `phoenix_kit ~> 1.7.105` is the floor in `mix.exs` (also tracked in
+  # dev_docs/migration_cleanup.md).
   defp already_migrated? do
-    case Integrations.get_integration("#{@new_integration_provider}:#{@new_integration_name}") do
-      {:ok, _} -> true
-      _ -> false
+    storage_key = "#{@new_integration_provider}:#{@new_integration_name}"
+
+    if function_exported?(Integrations, :find_uuid_by_provider_name, 1) do
+      # `apply/3` is deliberate: cores that pre-date the helper would
+      # otherwise emit an "undefined function" warning at compile time
+      # even though the `function_exported?/3` guard makes the call
+      # safe at runtime. Drop the `apply/3` once `~> 1.7.105` is the
+      # floor in `mix.exs`.
+      # credo:disable-for-next-line Credo.Check.Refactor.Apply
+      apply(Integrations, :find_uuid_by_provider_name, [storage_key]) |> is_binary()
+    else
+      case Integrations.get_integration(storage_key) do
+        {:ok, _} -> true
+        _ -> false
+      end
     end
   end
 
@@ -450,6 +470,17 @@ defmodule PhoenixKitDocumentCreator do
         Logger.warning(
           "[DocumentCreator] Reference migration: cannot resolve '#{name_string}': #{inspect(reason)}"
         )
+
+        # Audit the failure so the lazy and boot paths are symmetric:
+        # both surface a `legacy_migrated` row with `migration_kind=
+        # reference_migration_failed` when the resolver can't pin a
+        # uuid. Without this row, ops have no audit trail of "we tried
+        # to migrate at boot, it didn't resolve" — they only see the
+        # resulting "not configured" state and the warning log line.
+        log_migration_activity(:reference_migration_failed, %{
+          old_value: name_string,
+          reason: inspect(reason)
+        })
 
         {:error, reason}
     end

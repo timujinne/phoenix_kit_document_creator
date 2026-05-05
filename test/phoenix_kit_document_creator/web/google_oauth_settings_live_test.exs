@@ -92,7 +92,13 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
       state = :sys.get_state(view.pid).socket.assigns
       assert state.browser_open == true
       assert state.browser_field == "templates_path"
-      assert state.browser_loading == true
+      # `browser_loading` flips true on click then false when the
+      # spawned `:load_drive_folders` task completes. Asserting
+      # `loading == true` is racy because the spawned task can
+      # finish before `:sys.get_state` returns (the unstubbed Drive
+      # call short-circuits to `[]` very fast). Pinning the modal
+      # state via `browser_open` + `browser_field` is sufficient —
+      # the loading flag is render-only.
     end
 
     test "browse_folder ignores invalid field (no modal)",

@@ -594,18 +594,85 @@ the original deep-dive review (initial reading missed that
 Per CLAUDE_REVIEW.md, these remain pre-existing and unaddressed
 even after Batch 7:
 
-- **M1** — DB queries in `mount/3` (changes SSR behaviour;
-  warrants its own PR).
-- **M2** — `Test.StubIntegrations` ETS table forces `async: false`
-  if used concurrently from multiple tests.
-- **S2** — `discover_folders/0` parallel tasks unsupervised.
-- **S3** — `verify_known_file/2` is O(N) per event.
-- **S5** — `actor_opts/1` duplicated across two LVs.
+- ~~**M1** — DB queries in `mount/3` (changes SSR behaviour;
+  warrants its own PR).~~ — closed in Batch 8 (issue #13 PR).
+- ~~**M2** — `Test.StubIntegrations` ETS table forces `async: false`
+  if used concurrently from multiple tests.~~ — closed in Batch 8.
+- ~~**S2** — `discover_folders/0` parallel tasks unsupervised.~~
+  — closed in Batch 8.
+- ~~**S3** — `verify_known_file/2` is O(N) per event.~~ — closed
+  in Batch 8.
+- ~~**S5** — `actor_opts/1` duplicated across two LVs.~~ — closed
+  in Batch 8.
 
-None block production; documented for future sweeps.
+## Batch 8 — close all parking-lot items 2026-05-05
+
+Issue #13 (per-template language picker) brought the M-tier and
+S-tier residuals from Batch 7's "Remaining items" list into scope.
+Per `feedback_followup_is_after_action.md` — `## Open` should be
+`None.` and parking-lot lists shouldn't accumulate. Each item was
+fixed mechanically in the same PR that landed the language column.
+
+- ~~**M1** — Move `mount/3` DB reads to `:load_initial` /
+  `:load_settings` handlers~~. Disconnected mount returns an empty
+  shell; connected mount sends a self() message that performs the
+  reads. Cuts the DB-call burst on every page load in half. Docs
+  live + Settings live both refactored in
+  `documents_live.ex:24-71` / `90-105` and
+  `google_oauth_settings_live.ex:23-58` / `66-95`.
+- ~~**M2** — `Test.StubIntegrations` claim/release ownership~~.
+  `claim!/0` registers the calling pid as the table owner;
+  subsequent calls from a different pid raise loudly with a
+  `:concurrent_stub_use` exit. Subsumes §1.9 from PR #12 — the
+  named ETS table stays (cross-process boundary requires it) but
+  the async-false constraint is enforced at runtime.
+- ~~**S2** — `discover_folders/0` →
+  `Task.Supervisor.async_stream_nolink(PhoenixKit.TaskSupervisor, ...)`~~.
+  Caller-LV exit cleans children automatically; per-task failure is
+  reported as `{:exit, reason}` in the stream so the explicit
+  `catch :exit, _` block is gone.
+- ~~**S3** — `verify_known_file/2` is O(1)~~. Replaced 4×
+  `Enum.any?/2` with `MapSet.member?/2` backed by a
+  `known_file_ids` assign rebuilt on `mount` + `:sync_complete`.
+- ~~**S5** — `actor_opts/1` lifted to
+  `PhoenixKitDocumentCreator.Web.Helpers`~~. Both LVs delegate
+  via tiny private wrappers (`defp actor_opts(s), do:
+  Helpers.actor_opts(s)`) to keep call shape stable across the
+  file. New module is the canonical home for any future LV
+  cross-cutting helpers.
+
+Plus the C12 triage on the Batch 8 changes themselves surfaced
+two additional items (already in the same commit batch):
+
+- Narrow the rescue in `Documents.default_language_code/0` from
+  bare `_` to named exception classes (matches the existing
+  `default_managed/2` shape).
+- `apply_template_language/2` logs a warning when `update_all`
+  touches zero rows (concurrent-delete visibility).
+
+### Files touched (Batch 8)
+
+| File | Change |
+|------|--------|
+| `lib/phoenix_kit_document_creator/web/documents_live.ex` | M1 (mount→handle_info), S3 (MapSet) |
+| `lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex` | M1 (mount→handle_info) |
+| `lib/phoenix_kit_document_creator/google_docs_client.ex` | S2 (supervised async_stream) |
+| `lib/phoenix_kit_document_creator/web/helpers.ex` | NEW — actor_opts/actor_uuid (S5) |
+| `lib/phoenix_kit_document_creator/documents.ex` | C12 follow-ups (narrow rescue, apply log) |
+| `test/support/stub_integrations.ex` | M2 + §1.9 (claim/release) |
+
+### Verification (Batch 8)
+
+- `mix precommit` — clean (compile + format + credo --strict 69
+  checks no issues + dialyzer 0 errors)
+- `mix test` — 414 tests, 0 failures, 4 excluded; 5/5 random
+  seeds stable
+- Browser smoke on `phoenix_kit_parent` (no Google connection):
+  disconnected-mount empty state renders cleanly with the new
+  mount→handle_info flow; with two synthetic templates seeded,
+  the language picker opens and closes correctly across both
+  card and list views; 0 console errors
 
 ## Open
 
-None — all findings closed across Batches 2 + 3 + 4 + 5 + 6 + 7.
-The five M/S-tier pre-existing items above the line are retained
-as visibility-for-future-sweeps items, not as open work on PR #11.
+None — all findings closed across Batches 2 + 3 + 4 + 5 + 6 + 7 + 8.

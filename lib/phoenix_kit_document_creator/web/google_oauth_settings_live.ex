@@ -17,43 +17,34 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
   alias PhoenixKit.Utils.Routes
   alias PhoenixKitDocumentCreator.Documents
   alias PhoenixKitDocumentCreator.GoogleDocsClient
+  alias PhoenixKitDocumentCreator.Web.Helpers
 
   @impl true
   def mount(_params, _session, socket) do
-    fc = GoogleDocsClient.get_folder_config()
-    active_uuid = GoogleDocsClient.active_integration_uuid()
-    connected = active_uuid && Integrations.connected?(active_uuid)
-
-    # Load all available Google connections for the selector
-    google_connections = Integrations.list_connections("google")
-
-    connection_info =
-      case active_uuid && Integrations.get_integration(active_uuid) do
-        {:ok, data} ->
-          %{
-            email:
-              get_in(data, ["metadata", "connected_email"]) ||
-                data["external_account_id"] || ""
-          }
-
-        _ ->
-          %{email: ""}
-      end
+    # Disconnected mount renders a fast empty shell; the connected mount
+    # triggers `:load_settings` which performs the actual DB / Settings
+    # reads. Without this gate, the four-call burst (folder_config /
+    # active_integration_uuid / list_connections / get_integration /
+    # connected?) would run twice per page load.
+    if connected?(socket) do
+      send(self(), :load_settings)
+    end
 
     {:ok,
      assign(socket,
        page_title: gettext("Document Creator — Folders"),
-       connected: connected,
-       connected_email: connection_info.email,
-       active_connection: active_uuid,
-       google_connections: google_connections,
-       # Folder config: path + name for each
-       templates_path: fc.templates_path,
-       templates_name: fc.templates_name,
-       documents_path: fc.documents_path,
-       documents_name: fc.documents_name,
-       deleted_path: fc.deleted_path,
-       deleted_name: fc.deleted_name,
+       loaded: false,
+       connected: false,
+       connected_email: "",
+       active_connection: nil,
+       google_connections: [],
+       # Folder config — populated by `:load_settings`
+       templates_path: nil,
+       templates_name: nil,
+       documents_path: nil,
+       documents_name: nil,
+       deleted_path: nil,
+       deleted_name: nil,
        # Folder browser modal
        browser_open: false,
        browser_field: nil,
@@ -69,6 +60,40 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
   @impl true
   def handle_params(_params, _uri, socket) do
     {:noreply, socket}
+  end
+
+  defp load_settings(socket) do
+    fc = GoogleDocsClient.get_folder_config()
+    active_uuid = GoogleDocsClient.active_integration_uuid()
+    connected = !!(active_uuid && Integrations.connected?(active_uuid))
+    google_connections = Integrations.list_connections("google")
+
+    connection_info =
+      case active_uuid && Integrations.get_integration(active_uuid) do
+        {:ok, data} ->
+          %{
+            email:
+              get_in(data, ["metadata", "connected_email"]) ||
+                data["external_account_id"] || ""
+          }
+
+        _ ->
+          %{email: ""}
+      end
+
+    assign(socket,
+      loaded: true,
+      connected: connected,
+      connected_email: connection_info.email,
+      active_connection: active_uuid,
+      google_connections: google_connections,
+      templates_path: fc.templates_path,
+      templates_name: fc.templates_name,
+      documents_path: fc.documents_path,
+      documents_name: fc.documents_name,
+      deleted_path: fc.deleted_path,
+      deleted_name: fc.deleted_name
+    )
   end
 
   # ── Events ─────────────────────────────────────────────────────────
@@ -241,6 +266,10 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
   end
 
   @impl true
+  def handle_info(:load_settings, socket) do
+    {:noreply, load_settings(socket)}
+  end
+
   def handle_info({:load_drive_folders, folder_id}, socket) do
     pid = self()
 
@@ -482,10 +511,5 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
     """
   end
 
-  defp actor_uuid(socket) do
-    case socket.assigns[:phoenix_kit_current_scope] do
-      %{user: %{uuid: uuid}} -> uuid
-      _ -> nil
-    end
-  end
+  defp actor_uuid(socket), do: Helpers.actor_uuid(socket)
 end

@@ -15,6 +15,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
 
   alias PhoenixKitDocumentCreator.Documents
   alias PhoenixKitDocumentCreator.GoogleDocsClient
+  alias PhoenixKitDocumentCreator.Web.Helpers
 
   @pubsub_topic PhoenixKitDocumentCreator.Documents.pubsub_topic()
   @refresh_cooldown_ms :timer.seconds(5)
@@ -22,39 +23,34 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    # Subscribe BEFORE the initial DB read so a `:files_changed` broadcast
-    # arriving between the read and the subscribe doesn't get dropped on
-    # the floor — without this, an admin who creates a file at the same
-    # moment another admin is mounting would have their broadcast vanish
-    # and the second admin's list would stay stale until the next 2-minute
-    # poll fires. The cost of subscribing first is at most one extra sync
-    # in the rare race where a broadcast does land between subscribe and
-    # read — `within_cooldown?/1` already gates the resulting sync.
+    # Disconnected mount returns an empty shell — no DB / Settings /
+    # Integrations calls. The connected mount subscribes to PubSub
+    # (BEFORE the DB read, so a `:files_changed` broadcast arriving
+    # between the read and the subscribe doesn't get dropped on the
+    # floor) then triggers `:load_initial` to do the file-list reads
+    # and the initial Drive sync. Without this gate, `mount/3` runs
+    # twice per page load and every DB read in it ran twice too.
     if connected?(socket) do
       PhoenixKit.PubSubHelper.subscribe(@pubsub_topic)
-    end
-
-    google_connected = google_connected?()
-    initial = load_initial_state(google_connected)
-
-    if connected?(socket) and google_connected do
-      send(self(), :sync_from_drive)
-      :timer.send_interval(:timer.minutes(2), self(), :poll_for_changes)
+      send(self(), :load_initial)
     end
 
     {:ok,
      assign(socket,
        page_title: gettext("Document Creator"),
        view_mode: "cards",
-       google_connected: google_connected,
-       templates: initial.templates,
-       documents: initial.documents,
-       trashed_templates: initial.trashed_templates,
-       trashed_documents: initial.trashed_documents,
+       loaded: false,
+       google_connected: false,
+       templates: [],
+       documents: [],
+       trashed_templates: [],
+       trashed_documents: [],
+       known_file_ids: MapSet.new(),
        status_mode: "active",
        pending_files: MapSet.new(),
-       thumbnails: initial.cached_thumbnails,
-       loading: google_connected and initial.db_empty,
+       thumbnails: %{},
+       enabled_languages: [],
+       loading: true,
        last_loaded_at: nil,
        error: nil,
        # Modal state
@@ -104,6 +100,36 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
   # ── Sync from Drive ──────────────────────────────────────────────
 
   @impl true
+  def handle_info(:load_initial, socket) do
+    google_connected = google_connected?()
+    initial = load_initial_state(google_connected)
+
+    if google_connected do
+      send(self(), :sync_from_drive)
+      :timer.send_interval(:timer.minutes(2), self(), :poll_for_changes)
+    end
+
+    {:noreply,
+     assign(socket,
+       loaded: true,
+       google_connected: google_connected,
+       templates: initial.templates,
+       documents: initial.documents,
+       trashed_templates: initial.trashed_templates,
+       trashed_documents: initial.trashed_documents,
+       known_file_ids:
+         build_known_file_ids(
+           initial.templates,
+           initial.documents,
+           initial.trashed_templates,
+           initial.trashed_documents
+         ),
+       thumbnails: initial.cached_thumbnails,
+       enabled_languages: Documents.list_enabled_languages(),
+       loading: google_connected and initial.db_empty
+     )}
+  end
+
   def handle_info(:sync_from_drive, socket) do
     pid = self()
 
@@ -151,6 +177,8 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
        documents: documents,
        trashed_templates: trashed_templates,
        trashed_documents: trashed_documents,
+       known_file_ids:
+         build_known_file_ids(templates, documents, trashed_templates, trashed_documents),
        thumbnails: Map.merge(socket.assigns.thumbnails, cached_thumbnails),
        loading: false,
        last_loaded_at: now_ms()
@@ -253,6 +281,31 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
       {:error, reason} ->
         Logger.error("Failed to create template: #{inspect(reason)}")
         {:noreply, assign(socket, error: gettext("Failed to create template. Please try again."))}
+    end
+  end
+
+  def handle_event("set_template_language", %{"id" => file_id} = params, socket) do
+    language =
+      case Map.get(params, "language", "") do
+        "" -> nil
+        code -> code
+      end
+
+    case verify_known_file(socket, file_id) do
+      :ok ->
+        case Documents.update_template_language(file_id, language, actor_opts(socket)) do
+          {:ok, _template} ->
+            templates = Documents.list_templates_from_db()
+            {:noreply, assign(socket, templates: templates)}
+
+          {:error, reason} ->
+            Logger.error("Failed to set template language for #{file_id}: #{inspect(reason)}")
+
+            {:noreply, assign(socket, error: gettext("Failed to update template language."))}
+        end
+
+      _ ->
+        {:noreply, socket}
     end
   end
 
@@ -918,7 +971,9 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
       view_mode: assigns.view_mode,
       status_mode: assigns.status_mode,
       pending_files: assigns.pending_files,
-      thumbnails: assigns.thumbnails
+      thumbnails: assigns.thumbnails,
+      is_template: assigns.live_action == :templates,
+      enabled_languages: assigns.enabled_languages
     }
   end
 
@@ -995,6 +1050,12 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
                 {gettext("unfiled")}
               </button>
             </div>
+            {render_language_picker(%{
+              file: file,
+              is_template: @is_template,
+              enabled_languages: @enabled_languages,
+              status_mode: @status_mode
+            })}
             <p :if={file["modifiedTime"]} class="text-xs text-base-content/40 mt-auto pt-2">
               {format_time(file["modifiedTime"])}
             </p>
@@ -1070,13 +1131,21 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
                 </td>
               <% else %>
               <td>
-                <a
-                  href={GoogleDocsClient.get_edit_url(file["id"])}
-                  target="_blank"
-                  class="font-medium link link-hover"
-                >
-                  {file["name"]}
-                </a>
+                <div class="flex items-center gap-2">
+                  <a
+                    href={GoogleDocsClient.get_edit_url(file["id"])}
+                    target="_blank"
+                    class="font-medium link link-hover"
+                  >
+                    {file["name"]}
+                  </a>
+                  {render_language_picker(%{
+                    file: file,
+                    is_template: @is_template,
+                    enabled_languages: @enabled_languages,
+                    status_mode: @status_mode
+                  })}
+                </div>
               </td>
               <td>
                 <span :if={file["status"] == "lost"} class="badge badge-warning badge-xs">
@@ -1173,6 +1242,75 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
   defp unfiled_success_message("current"), do: gettext("Saved current location")
   defp unfiled_success_message(_), do: gettext("Updated")
 
+  # Per-template language picker. Hidden on the documents tab (documents
+  # inherit language from their source template), in the trash view, and
+  # when the host app's Languages module isn't enabled (`enabled_languages`
+  # arrives as `[]`). Shows the current locale code or "Set language" on
+  # the trigger; clicking opens a native HTML `popover` listing every
+  # enabled language plus a "Clear" entry. Popovers escape the card's
+  # `overflow: hidden` clipping container automatically.
+  defp render_language_picker(assigns) do
+    ~H"""
+    <div
+      :if={@is_template and @status_mode != "trashed" and @enabled_languages != []}
+      class="relative inline-flex"
+    >
+      <button
+        type="button"
+        popovertarget={"lang-pop-" <> @file["id"]}
+        style={"anchor-name: --lang-trigger-#{@file["id"]}"}
+        class={"badge badge-xs cursor-pointer #{if @file["language"], do: "badge-ghost", else: "badge-outline border-dashed"}"}
+        title={gettext("Template language")}
+      >
+        <span :if={@file["language"]} class="font-mono uppercase">
+          {@file["language"]}
+        </span>
+        <span :if={!@file["language"]}>
+          {gettext("Set language")}
+        </span>
+        <span class="hero-chevron-down w-2.5 h-2.5" />
+      </button>
+      <div
+        id={"lang-pop-" <> @file["id"]}
+        popover="auto"
+        style={
+          "position-anchor: --lang-trigger-#{@file["id"]}; " <>
+          "position-area: bottom span-right; " <>
+          "margin: 4px 0 0 0; inset: auto;"
+        }
+        class="bg-base-100 rounded-box w-60 p-1 shadow-lg max-h-72 overflow-y-auto border border-base-300 [&:not(:popover-open)]:hidden"
+      >
+        <%= for lang <- @enabled_languages do %>
+          <button
+            type="button"
+            popovertarget={"lang-pop-" <> @file["id"]}
+            popovertargetaction="hide"
+            phx-click="set_template_language"
+            phx-value-id={@file["id"]}
+            phx-value-language={lang.code}
+            class={"w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-sm hover:bg-base-200 #{if @file["language"] == lang.code, do: "bg-primary/10 text-primary", else: ""}"}
+          >
+            <span class="font-mono uppercase text-xs opacity-60 w-12 shrink-0">{lang.code}</span>
+            <span class="truncate flex-1">{lang.name}</span>
+          </button>
+        <% end %>
+        <button
+          :if={@file["language"]}
+          type="button"
+          popovertarget={"lang-pop-" <> @file["id"]}
+          popovertargetaction="hide"
+          phx-click="set_template_language"
+          phx-value-id={@file["id"]}
+          phx-value-language=""
+          class="w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-sm text-base-content/50 hover:bg-base-200 mt-1 border-t border-base-200 pt-2"
+        >
+          <span class="hero-x-mark w-3.5 h-3.5" /> {gettext("Clear language")}
+        </button>
+      </div>
+    </div>
+    """
+  end
+
   defp render_thumbnail(assigns) do
     ~H"""
     <div style="width:183px;height:258px;overflow:hidden;border-radius:4px;background:#fff;border:1px solid oklch(var(--color-base-content) / 0.2);box-shadow:0 2px 8px rgba(0,0,0,0.08);">
@@ -1210,21 +1348,23 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
     |> Kernel.<>(".pdf")
   end
 
-  defp actor_opts(socket) do
-    case socket.assigns[:phoenix_kit_current_scope] do
-      %{user: %{uuid: uuid}} -> [actor_uuid: uuid]
-      _ -> []
-    end
+  defp actor_opts(socket), do: Helpers.actor_opts(socket)
+
+  # `known_file_ids` is a `MapSet` of every file ID this LV has loaded
+  # across the four lists. Maintained by `assign_file_lists/2` whenever
+  # any of those lists change. Lookup is O(1) — replaces the previous
+  # 4× `Enum.any?/2` shape that was O(N) per event and noticeable on
+  # folders with thousands of files.
+  defp verify_known_file(socket, file_id) do
+    if MapSet.member?(socket.assigns.known_file_ids, file_id),
+      do: :ok,
+      else: :unknown
   end
 
-  defp verify_known_file(socket, file_id) do
-    known? =
-      Enum.any?(socket.assigns.templates, &(&1["id"] == file_id)) or
-        Enum.any?(socket.assigns.documents, &(&1["id"] == file_id)) or
-        Enum.any?(socket.assigns.trashed_templates, &(&1["id"] == file_id)) or
-        Enum.any?(socket.assigns.trashed_documents, &(&1["id"] == file_id))
-
-    if known?, do: :ok, else: :unknown
+  defp build_known_file_ids(templates, documents, trashed_templates, trashed_documents) do
+    [templates, documents, trashed_templates, trashed_documents]
+    |> Enum.flat_map(fn list -> Enum.map(list, & &1["id"]) end)
+    |> MapSet.new()
   end
 
   defp broadcast_files_changed do
