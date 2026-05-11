@@ -1,7 +1,8 @@
 ## Unreleased
 
 ### Added
-- Image placeholder support in Google Docs templates. Two new tag shapes: `{{ image: name }}` (single image) and `{{ images: name }}` (ordered list of images). Image tags are detected separately from text variables, stored as `media_id` / `media_ids` in `variable_values`, and substituted via a second Google Docs `batchUpdate` pass after text replacement.
+
+- Image placeholders in templates: `{{ image: name }}` for single images and `{{ images: name }}` for ordered lists. Variables detected via forked `extract_variables/1` returning `%{text: [...], image: [...]}`. Filled via PhoenixKit `MediaBrowser` selector in the create-document modal. Per-variable config (`default_width_px`, `separator`, `max_count`) editable via the `VariableConfigForm` component (read-only in v1; admin persistence is a follow-up). Substitution is a two-pass batchUpdate: text-first via `replaceAllText`, then images via `documents.get` + `DeleteContentRange` + `InsertInlineImage`. `find_image_tag_ranges/2` correctly handles multi-byte (UTF-16) prefix text via codepoint counting.
 - `Variable.extract_string_variables/1` and `Variable.extract_image_variables/1` — public leaf detectors; `extract_variables/1` now returns `%{text: [...], image: [...]}` (breaking change within this module's public API).
 - `Variable` struct gains a `config` field: `%{default_width_px: 400}` for `:image`, plus `separator` and `max_count` for `:image_list`. Stored in the existing `variables` jsonb column.
 - `GoogleDocsClient.substitute_images/2` — walks `documents.get` content, finds every image tag occurrence by UTF-16 code unit offset, then issues a single `batchUpdate` with `DeleteContentRange` + `InsertInlineImage` per occurrence. Handles both single and list cases; inserts are ordered from last to first occurrence to preserve indices.
@@ -9,12 +10,22 @@
 - Admin fill form: `:image` variables render a "Choose image" button; `:image_list` variables render "Choose images" (multi-select). Sequential media picks accumulate via `picking_existing` URL param so earlier selections are not lost when returning from the `MediaBrowser`.
 
 ### Changed
+
 - `Documents.detect_variables/1` now returns `{:ok, %{text: [...], image: [...]}}` — callers that expected a flat list must be updated.
 - `Documents.create_document_from_template/3` orchestrates two ordered `batchUpdate` passes: text substitution first, image substitution second.
 - Text-variable regex gains explicit negative-lookahead `(?!images?\s*:)` to encode the invariant that `{{ image: x }}` tags are never captured as text variables.
 
 ### Fixed
+
 - UTF-16 code unit offset bug in `match_to_range/4`: `Regex.scan` returns byte offsets; all arithmetic now uses `binary_part/3` + `String.length/1` to convert to codepoint offsets, ensuring correct `startIndex`/`endIndex` values in documents containing multi-byte characters (e.g. Cyrillic).
+
+### Known limitations (deferred to follow-ups)
+
+- `VariableConfigForm` renders inline in `CreateDocumentModal` but has no `phx-change` persistence path — config edits don't write back to `Template.variables`. Operators get the defaults from `Variable.build_definitions/1` (400px width, newline separator, no max_count) and can override per-document but not per-template.
+- `find_image_tag_ranges/2` uses Unicode codepoint counting (`String.length`) — correct for BMP characters including all Cyrillic / Latin extended / common CJK. Off-by-N for supplementary-plane codepoints (most emoji, rare CJK extensions) because UTF-16 represents them as surrogate pairs (2 code units per codepoint). Document authors typing emoji as prefix-to-tag may see shifted insertion offsets.
+- No telemetry / observability around the image batch operations.
+- E2E integration test (`test/integration/image_substitution_integration_test.exs`) requires `PHOENIX_KIT_DOC_CREATOR_DEV_OAUTH` and a real dev Google account to run.
+- The image-variable regex `~r/\{\{\s*(image|images)\s*:\s*(\w+)\s*\}\}/` is intentionally duplicated between `Variable` and `GoogleDocsClient` — each module owns its own parsing to avoid a shared dependency.
 
 ## 0.2.10 - 2026-05-05
 
