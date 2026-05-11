@@ -659,11 +659,16 @@ defmodule PhoenixKitDocumentCreator.Documents do
           {:ok, map()} | {:error, term()}
   def create_document_from_template(template_file_id, variable_values, opts \\ []) do
     doc_name = Keyword.get(opts, :name, "New Document")
+    client = docs_client()
+    {text_values, image_value_specs} = split_text_and_image_values(variable_values)
 
     with {:ok, target} <- resolve_create_target(opts),
+         {:ok, template_vars} <- load_template_vars(template_file_id),
+         {:ok, image_fills} <- resolve_image_fills(template_vars, image_value_specs),
          {:ok, new_doc_id} <-
-           GoogleDocsClient.copy_file(template_file_id, doc_name, parent: target.folder_id),
-         {:ok, _} <- GoogleDocsClient.replace_all_text(new_doc_id, variable_values) do
+           client.copy_file(template_file_id, doc_name, parent: target.folder_id),
+         {:ok, _} <- client.replace_all_text(new_doc_id, text_values),
+         {:ok, _} <- client.substitute_images(new_doc_id, image_fills) do
       persist_created_document(
         new_doc_id,
         template_file_id,
@@ -672,6 +677,39 @@ defmodule PhoenixKitDocumentCreator.Documents do
         target,
         opts
       )
+    end
+  end
+
+  @doc "Splits variable_values into text values and image specs."
+  @spec split_text_and_image_values(map()) :: {map(), map()}
+  def split_text_and_image_values(values) do
+    Enum.reduce(values, {%{}, %{}}, fn
+      {k, %{"media_id" => _} = spec}, {t, i} -> {t, Map.put(i, k, spec)}
+      {k, %{"media_ids" => _} = spec}, {t, i} -> {t, Map.put(i, k, spec)}
+      {k, v}, {t, i} -> {Map.put(t, k, v), i}
+    end)
+  end
+
+  @doc "Resolves image value specs against template variable defs and media module."
+  @spec resolve_image_fills([map()], map()) :: {:ok, map()} | {:error, term()}
+  def resolve_image_fills(template_vars, image_value_specs) do
+    defs = image_var_defs_from_list(template_vars)
+
+    Enum.reduce_while(image_value_specs, {:ok, %{}}, fn {name, spec}, {:ok, acc} ->
+      reduce_one_fill(defs, name, spec, acc)
+    end)
+  end
+
+  defp reduce_one_fill(defs, name, spec, acc) do
+    case Map.fetch(defs, name) do
+      :error ->
+        {:halt, {:error, :image_tag_not_found}}
+
+      {:ok, def_} ->
+        case resolve_one_image_spec(spec, def_) do
+          {:ok, fill} -> {:cont, {:ok, Map.put(acc, name, fill)}}
+          {:error, _} = err -> {:halt, err}
+        end
     end
   end
 
@@ -772,6 +810,75 @@ defmodule PhoenixKitDocumentCreator.Documents do
     |> where([t], t.google_doc_id == ^google_doc_id)
     |> select([t], t.uuid)
     |> repo().one()
+  end
+
+  defp docs_client do
+    Application.get_env(
+      :phoenix_kit_document_creator,
+      :docs_client,
+      GoogleDocsClient
+    )
+  end
+
+  defp load_template_vars(template_file_id) do
+    case repo().get_by(Template, google_doc_id: template_file_id) do
+      nil -> {:ok, []}
+      template -> {:ok, template.variables || []}
+    end
+  end
+
+  defp image_var_defs_from_list(template_vars) do
+    for var <- template_vars,
+        var["type"] in ["image", "image_list"],
+        into: %{} do
+      {var["name"],
+       %{
+         kind: String.to_existing_atom(var["type"]),
+         default_width_px: get_in(var, ["config", "default_width_px"]) || 400,
+         separator: var |> get_in(["config", "separator"]) |> normalize_separator()
+       }}
+    end
+  end
+
+  defp normalize_separator("newline"), do: :newline
+  defp normalize_separator(:newline), do: :newline
+  defp normalize_separator("space"), do: :space
+  defp normalize_separator(:space), do: :space
+  defp normalize_separator(_), do: :none
+
+  defp resolve_one_image_spec(%{"media_id" => media_id}, def_) do
+    with {:ok, m} <- PhoenixKitDocumentCreator.Media.get_url_and_dimensions(media_id) do
+      {:ok,
+       %{
+         kind: def_.kind,
+         default_width_px: def_.default_width_px,
+         separator: def_.separator,
+         media: [m]
+       }}
+    end
+  end
+
+  defp resolve_one_image_spec(%{"media_ids" => ids}, def_) when is_list(ids) do
+    ids
+    |> Enum.reduce_while({:ok, []}, fn id, {:ok, acc} ->
+      case PhoenixKitDocumentCreator.Media.get_url_and_dimensions(id) do
+        {:ok, m} -> {:cont, {:ok, [m | acc]}}
+        err -> {:halt, err}
+      end
+    end)
+    |> case do
+      {:ok, list} ->
+        {:ok,
+         %{
+           kind: def_.kind,
+           default_width_px: def_.default_width_px,
+           separator: def_.separator,
+           media: Enum.reverse(list)
+         }}
+
+      err ->
+        err
+    end
   end
 
   # ===========================================================================
