@@ -13,11 +13,12 @@ defmodule PhoenixKitDocumentCreator.Variable do
           label: String.t(),
           type: variable_type(),
           default: String.t() | nil,
-          required: boolean()
+          required: boolean(),
+          config: map()
         }
 
   @enforce_keys [:name, :label, :type]
-  defstruct [:name, :label, :type, default: nil, required: false]
+  defstruct [:name, :label, :type, default: nil, required: false, config: %{}]
 
   @doc """
   Extracts variable names from text by scanning for `{{ variable_name }}` patterns.
