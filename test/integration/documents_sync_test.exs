@@ -256,9 +256,9 @@ defmodule PhoenixKitDocumentCreator.Integration.DocumentsSyncTest do
          }}
       )
 
-      assert {:ok, vars} = Documents.detect_variables("var-doc")
-      assert "client_name" in vars
-      assert "amount" in vars
+      assert {:ok, %{text: text_vars, image: _}} = Documents.detect_variables("var-doc")
+      assert "client_name" in text_vars
+      assert "amount" in text_vars
     end
 
     test "returns {:error, _} when Drive fails" do
