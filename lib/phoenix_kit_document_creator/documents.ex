@@ -83,6 +83,49 @@ defmodule PhoenixKitDocumentCreator.Documents do
   # DB Listing (fast, no API calls)
   # ===========================================================================
 
+  @doc """
+  Fetches a single template row by its Google Doc ID.
+
+  Returns `{:ok, %{"id" => ..., "name" => ...}}` or `{:error, :not_found}`.
+  """
+  @spec get_template_from_db(String.t()) :: {:ok, map()} | {:error, :not_found}
+  def get_template_from_db(google_doc_id) when is_binary(google_doc_id) do
+    case repo().get_by(Template, google_doc_id: google_doc_id) do
+      nil -> {:error, :not_found}
+      record -> {:ok, schema_to_file_map(record)}
+    end
+  end
+
+  @doc """
+  Returns the DB-cached variable definitions for a template as a list of
+  `Variable.t()` structs, without making any Drive API calls.
+
+  Returns `[]` if the template has no cached variables.
+  """
+  @spec get_template_variables_from_db(String.t()) :: [PhoenixKitDocumentCreator.Variable.t()]
+  def get_template_variables_from_db(google_doc_id) when is_binary(google_doc_id) do
+    case repo().get_by(Template, google_doc_id: google_doc_id) do
+      nil ->
+        []
+
+      template ->
+        raw_vars = template.variables || []
+
+        Enum.map(raw_vars, fn var ->
+          type = var["type"] && String.to_existing_atom(var["type"])
+
+          %PhoenixKitDocumentCreator.Variable{
+            name: var["name"],
+            label: var["label"] || var["name"],
+            type: type || :text,
+            required: var["required"] || false,
+            default: var["default"],
+            config: var["config"] || %{}
+          }
+        end)
+    end
+  end
+
   @doc "List templates from the local DB. Returns maps compatible with the LiveView."
   @spec list_templates_from_db() :: [map()]
   def list_templates_from_db do

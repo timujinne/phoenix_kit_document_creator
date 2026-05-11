@@ -88,9 +88,30 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
       {:ok, uuids} ->
         var_name = Map.get(params, "picking_var")
         mode = Map.get(params, "picking_mode", "single")
-        apply_image_selection(socket, var_name, mode, uuids)
+        template_file_id = Map.get(params, "template_file_id")
+
+        socket
+        |> restore_template_state(template_file_id)
+        |> apply_image_selection(var_name, mode, uuids)
 
       :none ->
+        socket
+    end
+  end
+
+  defp restore_template_state(socket, nil), do: socket
+
+  defp restore_template_state(socket, template_file_id) do
+    case Documents.get_template_from_db(template_file_id) do
+      {:ok, template} ->
+        variables = Documents.get_template_variables_from_db(template_file_id)
+
+        assign(socket,
+          modal_selected_template: template,
+          modal_variables: Enum.map(variables, &Map.from_struct/1)
+        )
+
+      _ ->
         socket
     end
   end
@@ -410,10 +431,16 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
 
   def handle_event("open_media_picker", %{"name" => var_name, "mode" => mode}, socket) do
     current_path = socket.assigns[:url_path] || "/admin/document-creator"
+    template_file_id = get_in(socket.assigns, [:modal_selected_template, "id"]) || ""
 
     return_to =
       current_path <>
-        "?picking_var=#{URI.encode_www_form(var_name)}&picking_mode=#{URI.encode_www_form(mode)}"
+        "?" <>
+        URI.encode_query(%{
+          "picking_var" => var_name,
+          "picking_mode" => mode,
+          "template_file_id" => template_file_id
+        })
 
     selector_url =
       MediaSelectorHelper.media_selector_url(return_to,

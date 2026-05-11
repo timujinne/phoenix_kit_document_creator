@@ -715,4 +715,30 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLiveTest do
       )
     end
   end
+
+  describe "media picker round-trip" do
+    test "returning from media selector restores template state and applies image selection",
+         %{conn: conn} do
+      file_id = "rt-tpl-#{System.unique_integer([:positive])}"
+
+      {:ok, _} =
+        Documents.upsert_template_from_drive(%{
+          "id" => file_id,
+          "name" => "Round-trip Template"
+        })
+
+      conn = put_test_scope(conn, fake_scope())
+
+      return_url =
+        "/en/admin/document-creator?selected_media=media-uuid-1&picking_var=logo&picking_mode=single&template_file_id=#{file_id}"
+
+      {:ok, view, _html} = live(conn, return_url)
+
+      state = :sys.get_state(view.pid).socket.assigns
+      assert state.modal_open == true
+      assert state.modal_step == "variables"
+      assert get_in(state, [:modal_selected_template, "id"]) == file_id
+      assert state.modal_image_values["logo"] == %{"media_id" => "media-uuid-1"}
+    end
+  end
 end
