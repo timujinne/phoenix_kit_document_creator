@@ -731,7 +731,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLiveTest do
 
       # The prior state contains one valid pick and one invalid entry.
       prior =
-        Jason.encode!(%{
+        JSON.encode!(%{
           "logo" => %{"media_id" => "valid-uuid"},
           "junk" => "value"
         })
@@ -855,7 +855,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLiveTest do
 
       # Simulate returning from the second media pick, with the first pick
       # encoded in `picking_existing`.
-      prior = Jason.encode!(%{"logo" => %{"media_id" => "first-uuid"}})
+      prior = JSON.encode!(%{"logo" => %{"media_id" => "first-uuid"}})
 
       return_url =
         "/en/admin/document-creator?" <>

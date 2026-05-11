@@ -434,7 +434,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
   def handle_event("open_media_picker", %{"name" => var_name, "mode" => mode}, socket) do
     current_path = socket.assigns[:url_path] || "/admin/document-creator"
     template_file_id = get_in(socket.assigns, [:modal_selected_template, "id"]) || ""
-    existing_image_values = Jason.encode!(socket.assigns.modal_image_values)
+    existing_image_values = JSON.encode!(socket.assigns.modal_image_values)
 
     return_to =
       current_path <>
@@ -1508,7 +1508,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
   end
 
   defp prior_image_values_from_json(json) do
-    case Jason.decode(json) do
+    case JSON.decode(json) do
       {:ok, map} when is_map(map) ->
         map
         |> Enum.filter(fn {k, v} -> is_binary(k) and valid_image_value?(v) end)

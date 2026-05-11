@@ -6,7 +6,7 @@
 - `Variable.extract_string_variables/1` and `Variable.extract_image_variables/1` — public leaf detectors; `extract_variables/1` now returns `%{text: [...], image: [...]}` (breaking change within this module's public API).
 - `Variable` struct gains a `config` field: `%{default_width_px: 400}` for `:image`, plus `separator` and `max_count` for `:image_list`. Stored in the existing `variables` jsonb column.
 - `GoogleDocsClient.substitute_images/2` — walks `documents.get` content, finds every image tag occurrence by UTF-16 code unit offset, then issues a single `batchUpdate` with `DeleteContentRange` + `InsertInlineImage` per occurrence. Handles both single and list cases; inserts are ordered from last to first occurrence to preserve indices.
-- `Errors` atoms: `:image_not_found`, `:image_url_not_public`, `:image_too_large`, `:image_insert_failed`, `:image_tag_not_found`.
+- `Errors` atoms: `:image_not_found`, `:image_url_not_public`, `:image_insert_failed`, `:image_tag_not_found`.
 - Admin fill form: `:image` variables render a "Choose image" button; `:image_list` variables render "Choose images" (multi-select). Sequential media picks accumulate via `picking_existing` URL param so earlier selections are not lost when returning from the `MediaBrowser`.
 
 ### Changed
@@ -17,12 +17,14 @@
 
 ### Fixed
 
-- UTF-16 code unit offset bug in `match_to_range/4`: `Regex.scan` returns byte offsets; all arithmetic now uses `binary_part/3` + `String.length/1` to convert to codepoint offsets, ensuring correct `startIndex`/`endIndex` values in documents containing multi-byte characters (e.g. Cyrillic).
+- UTF-16 code unit offset bug in `match_to_range/4`: `Regex.scan` returns byte offsets; arithmetic now converts the prefix-and-match bytes through `:unicode.characters_to_binary(_, :utf8, :utf16)` so both BMP characters (Cyrillic, Latin extended, common CJK) and supplementary-plane codepoints (emoji, rare CJK extensions) contribute the correct number of `startIndex` units to the Drive document.
+- `Errors`: dropped two unemitted atoms (`:image_too_large`, `:missing_required_value`) plus their `message/1` clauses — neither was returned by any module and the gettext entries would have shown up as obsolete on the next extract.
+- `VariableConfigForm.separator_options/1`: replaced raw-HTML `Phoenix.HTML.raw/1` interpolation with HEEx `<option>` tags so gettext-resolved labels go through automatic escaping.
+- `DocumentsLive`: media-picker round-trip JSON now uses the built-in `JSON` module (Elixir 1.18+) instead of `Jason`, matching the rest of the codebase.
 
 ### Known limitations (deferred to follow-ups)
 
-- `VariableConfigForm` renders inline in `CreateDocumentModal` but has no `phx-change` persistence path — config edits don't write back to `Template.variables`. Operators get the defaults from `Variable.build_definitions/1` (400px width, newline separator, no max_count) and can override per-document but not per-template.
-- `find_image_tag_ranges/2` uses Unicode codepoint counting (`String.length`) — correct for BMP characters including all Cyrillic / Latin extended / common CJK. Off-by-N for supplementary-plane codepoints (most emoji, rare CJK extensions) because UTF-16 represents them as surrogate pairs (2 code units per codepoint). Document authors typing emoji as prefix-to-tag may see shifted insertion offsets.
+- `VariableConfigForm` defines a component but is not yet rendered by any LiveView — config edits cannot be entered by operators. Defaults from `Variable.build_definitions/1` (400px width, newline separator, no max_count) are used at fill time.
 - No telemetry / observability around the image batch operations.
 - E2E integration test (`test/integration/image_substitution_integration_test.exs`) requires `PHOENIX_KIT_DOC_CREATOR_DEV_OAUTH` and a real dev Google account to run.
 - The image-variable regex `~r/\{\{\s*(image|images)\s*:\s*(\w+)\s*\}\}/` is intentionally duplicated between `Variable` and `GoogleDocsClient` — each module owns its own parsing to avoid a shared dependency.

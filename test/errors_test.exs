@@ -91,10 +91,8 @@ defmodule PhoenixKitDocumentCreator.ErrorsTest do
     @image_atom_expectations [
       {:image_not_found, "Image media not found"},
       {:image_url_not_public, "Image URL is not publicly accessible or exceeds 2 KB"},
-      {:image_too_large, "Image exceeds 50 MB or 25 megapixels"},
       {:image_insert_failed, "Failed to insert images into document"},
-      {:image_tag_not_found, "Image placeholder tag not found in template"},
-      {:missing_required_value, "A required variable was not filled"}
+      {:image_tag_not_found, "Image placeholder tag not found in template"}
     ]
 
     for {atom, expected} <- @image_atom_expectations do

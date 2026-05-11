@@ -52,10 +52,8 @@ defmodule PhoenixKitDocumentCreator.Errors do
           | :thumbnail_link_failed
           | :image_not_found
           | :image_url_not_public
-          | :image_too_large
           | :image_insert_failed
           | :image_tag_not_found
-          | :missing_required_value
 
   @doc """
   Returns a human-readable message for an error atom, changeset, or
@@ -96,10 +94,8 @@ defmodule PhoenixKitDocumentCreator.Errors do
   def message(:image_url_not_public),
     do: gettext("Image URL is not publicly accessible or exceeds 2 KB")
 
-  def message(:image_too_large), do: gettext("Image exceeds 50 MB or 25 megapixels")
   def message(:image_insert_failed), do: gettext("Failed to insert images into document")
   def message(:image_tag_not_found), do: gettext("Image placeholder tag not found in template")
-  def message(:missing_required_value), do: gettext("A required variable was not filled")
 
   def message({:error, reason}), do: message(reason)
 

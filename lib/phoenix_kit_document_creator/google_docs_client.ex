@@ -698,9 +698,9 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
 
   **Offset note:** `Regex.scan(..., return: :index)` returns byte offsets;
   Google Docs `startIndex` counts UTF-16 code units. The implementation
-  converts byte offsets to codepoint counts (one per BMP char). Supplementary
-  codepoints (rare emoji outside the BMP) would each require two UTF-16 code
-  units and are not yet handled.
+  converts byte offsets to UTF-16 code-unit counts via
+  `:unicode.characters_to_binary/3` so supplementary-plane codepoints
+  (emoji, rare CJK) are counted as the two units a surrogate pair occupies.
   """
   @spec find_image_tag_ranges(map(), [String.t()]) ::
           [%{name: String.t(), start_index: integer(), end_index: integer()}]
@@ -758,20 +758,19 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
        ) do
     # `Regex.scan` with `return: :index` yields byte offsets. Google Docs
     # `startIndex` counts UTF-16 code units (one per BMP codepoint, two per
-    # supplementary). We convert byte offsets to codepoint counts using the
-    # binary prefix before the match — for BMP text (Latin, Cyrillic, most
-    # CJK) codepoints equal UTF-16 code units. Surrogate pairs (rare emoji)
-    # would need an additional adjustment; that case is out of scope.
-    full_cp_start = content |> binary_part(0, full_byte_start) |> String.length()
-    full_cp_len = content |> binary_part(full_byte_start, full_byte_len) |> String.length()
+    # supplementary). Convert the prefix-and-match bytes to UTF-16 length
+    # so supplementary-plane codepoints (emoji, rare CJK) contribute the
+    # surrogate-pair pair of code units they occupy in the doc index.
+    full_u16_start = content |> binary_part(0, full_byte_start) |> utf16_units()
+    full_u16_len = content |> binary_part(full_byte_start, full_byte_len) |> utf16_units()
     name = binary_part(content, name_byte_start, name_byte_len)
 
     if MapSet.member?(names_set, name) do
       [
         %{
           name: name,
-          start_index: base + full_cp_start,
-          end_index: base + full_cp_start + full_cp_len
+          start_index: base + full_u16_start,
+          end_index: base + full_u16_start + full_u16_len
         }
       ]
     else
@@ -780,6 +779,17 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   end
 
   defp match_to_range(_, _, _, _), do: []
+
+  # Number of UTF-16 code units the given UTF-8 binary occupies — i.e. the
+  # `startIndex` arithmetic unit Google Docs uses. Supplementary-plane
+  # codepoints (most emoji, rare CJK) contribute two units (a surrogate
+  # pair); BMP codepoints contribute one.
+  defp utf16_units(binary) do
+    binary
+    |> :unicode.characters_to_binary(:utf8, :utf16)
+    |> byte_size()
+    |> div(2)
+  end
 
   @px_to_emu 9525
 

@@ -33,6 +33,10 @@ defmodule PhoenixKitDocumentCreator.Web.Components.VariableConfigForm do
   end
 
   def config_form(%{variable: %{type: :image_list}} = assigns) do
+    current = assigns.variable.config[:separator] || assigns.variable.config["separator"]
+    current_separator = if current, do: to_string(current), else: "newline"
+    assigns = assign(assigns, :current_separator, current_separator)
+
     ~H"""
     <div class="space-y-2">
       <div class="form-control">
@@ -56,7 +60,9 @@ defmodule PhoenixKitDocumentCreator.Web.Components.VariableConfigForm do
           name={"config[#{@variable.name}][separator]"}
           class="select select-bordered select-sm w-full"
         >
-          {separator_options(@variable.config[:separator] || @variable.config["separator"])}
+          <option value="newline" selected={@current_separator == "newline"}>{gettext("New line")}</option>
+          <option value="space" selected={@current_separator == "space"}>{gettext("Space")}</option>
+          <option value="none" selected={@current_separator == "none"}>{gettext("None")}</option>
         </select>
       </div>
       <div class="form-control">
@@ -78,21 +84,5 @@ defmodule PhoenixKitDocumentCreator.Web.Components.VariableConfigForm do
 
   def config_form(assigns) do
     ~H""
-  end
-
-  defp separator_options(current) do
-    options = [
-      {"newline", gettext("New line")},
-      {"space", gettext("Space")},
-      {"none", gettext("None")}
-    ]
-
-    current_str = if current, do: to_string(current), else: "newline"
-
-    Enum.map_join(options, fn {value, label} ->
-      selected = if value == current_str, do: " selected", else: ""
-      "<option value=\"#{value}\"#{selected}>#{label}</option>"
-    end)
-    |> Phoenix.HTML.raw()
   end
 end
