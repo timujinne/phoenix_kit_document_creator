@@ -247,4 +247,61 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient.ImageSubstitutionTest do
                GoogleDocsClient.build_image_batch_requests(ranges, fills)
     end
   end
+
+  describe "substitute_images/3" do
+    test "no-op when there are no image fills" do
+      get_fn = fn _ -> flunk("get should not be called") end
+      batch_fn = fn _, _ -> flunk("batch_update should not be called") end
+
+      assert {:ok, :noop} =
+               GoogleDocsClient.substitute_images("file-id", %{},
+                 get_fn: get_fn,
+                 batch_fn: batch_fn
+               )
+    end
+
+    test "calls batch_update with built requests" do
+      doc = %{
+        "body" => %{
+          "content" => [
+            %{
+              "paragraph" => %{
+                "elements" => [
+                  %{
+                    "startIndex" => 1,
+                    "endIndex" => 18,
+                    "textRun" => %{"content" => "{{ image: logo }}"}
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+
+      get_fn = fn "file-id" -> {:ok, %{body: doc}} end
+
+      batch_fn = fn "file-id", requests ->
+        send(self(), {:batch, requests})
+        {:ok, %{}}
+      end
+
+      fills = %{
+        "logo" => %{
+          kind: :image,
+          default_width_px: 400,
+          separator: nil,
+          media: [%{uri: "u", width_px: 400, height_px: 400}]
+        }
+      }
+
+      assert {:ok, _} =
+               GoogleDocsClient.substitute_images("file-id", fills,
+                 get_fn: get_fn,
+                 batch_fn: batch_fn
+               )
+
+      assert_receive {:batch, [%{deleteContentRange: _}, %{insertInlineImage: _}]}
+    end
+  end
 end

@@ -852,6 +852,38 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
     %{insertText: %{text: text, location: %{index: index}}}
   end
 
+  @doc """
+  Two-step image substitution: GET the document, build the batch, send it.
+
+  `fills` is the same shape as `build_image_batch_requests/2`.
+
+  Options (used in tests):
+    * `:get_fn` — overrides `get_document/1`
+    * `:batch_fn` — overrides `batch_update/2`
+  """
+  @spec substitute_images(String.t(), map(), keyword()) ::
+          {:ok, map() | :noop} | {:error, term()}
+  def substitute_images(doc_id, fills, opts \\ []) when is_map(fills) do
+    if map_size(fills) == 0 do
+      {:ok, :noop}
+    else
+      get_fn = Keyword.get(opts, :get_fn, &get_document/1)
+      batch_fn = Keyword.get(opts, :batch_fn, &batch_update/2)
+
+      with {:ok, %{body: doc}} <- get_fn.(doc_id),
+           ranges = find_image_tag_ranges(doc, Map.keys(fills)),
+           requests = build_image_batch_requests(ranges, fills),
+           {:ok, _} = result <- maybe_batch(batch_fn, doc_id, requests) do
+        result
+      else
+        {:error, _} = err -> err
+      end
+    end
+  end
+
+  defp maybe_batch(_fn, _id, []), do: {:ok, %{}}
+  defp maybe_batch(fn_, id, requests), do: fn_.(id, requests)
+
   # ===========================================================================
   # Google Drive API
   # ===========================================================================
