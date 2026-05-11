@@ -6,7 +6,7 @@ defmodule PhoenixKitDocumentCreator.Variable do
   get substituted with actual values via the Google Docs `replaceAllText` API.
   """
 
-  @type variable_type :: :text | :date | :currency | :multiline
+  @type variable_type :: :text | :date | :currency | :multiline | :image | :image_list
 
   @type t :: %__MODULE__{
           name: String.t(),
