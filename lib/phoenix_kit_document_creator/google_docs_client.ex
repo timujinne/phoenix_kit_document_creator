@@ -745,20 +745,27 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
          names_set
        ) do
     Regex.scan(@image_tag_regex, content, return: :index)
-    |> Enum.flat_map(fn match ->
-      [{full_start, full_len} | _] = match
-      {name_start, name_len} = Enum.at(match, 2)
-      name = String.slice(content, name_start, name_len)
-
-      if MapSet.member?(names_set, name) do
-        [%{name: name, start_index: base + full_start, end_index: base + full_start + full_len}]
-      else
-        []
-      end
-    end)
+    |> Enum.flat_map(&match_to_range(&1, content, base, names_set))
   end
 
   defp extract_tag_ranges(_, _), do: []
+
+  defp match_to_range(
+         [{full_start, full_len}, _keyword_pos, {name_start, name_len}],
+         content,
+         base,
+         names_set
+       ) do
+    name = String.slice(content, name_start, name_len)
+
+    if MapSet.member?(names_set, name) do
+      [%{name: name, start_index: base + full_start, end_index: base + full_start + full_len}]
+    else
+      []
+    end
+  end
+
+  defp match_to_range(_, _, _, _), do: []
 
   @px_to_emu 9525
 

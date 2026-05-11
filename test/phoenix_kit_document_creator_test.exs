@@ -137,17 +137,17 @@ defmodule PhoenixKitDocumentCreatorTest do
     alias PhoenixKitDocumentCreator.Variable
 
     test "extract_variables/1 finds template variables" do
-      vars = Variable.extract_variables("Hello {{ name }}, total: {{ amount }}")
-      assert "amount" in vars
-      assert "name" in vars
+      fork = Variable.extract_variables("Hello {{ name }}, total: {{ amount }}")
+      assert "amount" in fork.text
+      assert "name" in fork.text
     end
 
-    test "extract_variables/1 returns empty list for nil" do
-      assert Variable.extract_variables(nil) == []
+    test "extract_variables/1 returns empty maps for nil" do
+      assert Variable.extract_variables(nil) == %{text: [], image: []}
     end
 
     test "build_definitions/1 creates Variable structs" do
-      defs = Variable.build_definitions(["company", "contract_date"])
+      defs = Variable.build_definitions(%{text: ["company", "contract_date"], image: []})
       assert length(defs) == 2
       assert %Variable{name: "company", label: "Company", type: :text} = hd(defs)
     end
@@ -167,15 +167,15 @@ defmodule PhoenixKitDocumentCreatorTest do
     # ── Edge cases on Variable helpers ──────────────────────────────
 
     test "extract_variables/1 deduplicates repeated names" do
-      vars = Variable.extract_variables("Hi {{ name }}, again {{ name }}, and {{ name }}.")
-      assert vars == ["name"]
+      fork = Variable.extract_variables("Hi {{ name }}, again {{ name }}, and {{ name }}.")
+      assert fork.text == ["name"]
     end
 
     test "extract_variables/1 ignores malformed placeholders" do
       # Single brace, missing closing, hyphenated names (\w doesn't match `-`).
-      assert Variable.extract_variables("{ name }") == []
-      assert Variable.extract_variables("{{ name") == []
-      assert Variable.extract_variables("{{ first-name }}") == []
+      assert Variable.extract_variables("{ name }") == %{text: [], image: []}
+      assert Variable.extract_variables("{{ name") == %{text: [], image: []}
+      assert Variable.extract_variables("{{ first-name }}") == %{text: [], image: []}
     end
 
     test "extract_variables/1 with non-ASCII content does not crash" do
@@ -183,19 +183,19 @@ defmodule PhoenixKitDocumentCreatorTest do
       # `{{ имя }}` or `{{ 名前 }}` aren't picked up. Pinning current
       # behaviour so a future regex tightening doesn't silently regress
       # ASCII parsing.
-      assert Variable.extract_variables("{{ имя }} and {{ name }} together") == ["name"]
-      assert Variable.extract_variables("{{ 名前 }}") == []
+      assert Variable.extract_variables("{{ имя }} and {{ name }} together").text == ["name"]
+      assert Variable.extract_variables("{{ 名前 }}") == %{text: [], image: []}
     end
 
-    test "extract_variables/1 returns [] for non-binary input" do
-      assert Variable.extract_variables(:atom) == []
-      assert Variable.extract_variables(123) == []
-      assert Variable.extract_variables(%{}) == []
+    test "extract_variables/1 returns empty fork for non-binary input" do
+      assert Variable.extract_variables(:atom) == %{text: [], image: []}
+      assert Variable.extract_variables(123) == %{text: [], image: []}
+      assert Variable.extract_variables(%{}) == %{text: [], image: []}
     end
 
     test "extract_variables/1 handles very long input" do
       long_text = String.duplicate("filler ", 5_000) <> "{{ marker }}"
-      assert Variable.extract_variables(long_text) == ["marker"]
+      assert Variable.extract_variables(long_text).text == ["marker"]
     end
 
     test "humanize/1 capitalises Unicode-leading words correctly" do
@@ -208,8 +208,8 @@ defmodule PhoenixKitDocumentCreatorTest do
       assert Variable.humanize("") == ""
     end
 
-    test "build_definitions/1 accepts empty list" do
-      assert Variable.build_definitions([]) == []
+    test "build_definitions/1 accepts empty fork" do
+      assert Variable.build_definitions(%{text: [], image: []}) == []
     end
   end
 end

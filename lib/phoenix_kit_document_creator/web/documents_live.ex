@@ -560,8 +560,8 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
   defp do_modal_select_template(socket, file_id, name) do
     variables =
       case Documents.detect_variables(file_id) do
-        {:ok, vars} ->
-          PhoenixKitDocumentCreator.Variable.build_definitions(vars)
+        {:ok, fork} ->
+          PhoenixKitDocumentCreator.Variable.build_definitions(fork)
           |> Enum.map(&Map.from_struct/1)
 
         _ ->

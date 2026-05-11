@@ -1431,15 +1431,17 @@ defmodule PhoenixKitDocumentCreator.Documents do
   # activity feed with one row per template-pick. The mutating writes
   # that *consume* the detected variables — `create_document_from_template`,
   # `register_existing_*` — log activity at the right granularity.
-  @spec detect_variables(String.t()) :: {:ok, [String.t()]} | {:error, term()}
+  @spec detect_variables(String.t()) ::
+          {:ok, %{text: [String.t()], image: [%{name: String.t(), kind: :image | :image_list}]}}
+          | {:error, term()}
   def detect_variables(file_id) when is_binary(file_id) do
     case GoogleDocsClient.get_document_text(file_id) do
       {:ok, text} ->
-        vars = PhoenixKitDocumentCreator.Variable.extract_variables(text)
+        fork = PhoenixKitDocumentCreator.Variable.extract_variables(text)
 
-        # Persist variable definitions to the template record
         var_defs =
-          PhoenixKitDocumentCreator.Variable.build_definitions(vars)
+          fork
+          |> PhoenixKitDocumentCreator.Variable.build_definitions()
           |> Enum.map(&Map.from_struct/1)
 
         now = DateTime.utc_now() |> DateTime.truncate(:second)
@@ -1448,7 +1450,7 @@ defmodule PhoenixKitDocumentCreator.Documents do
         |> where([t], t.google_doc_id == ^file_id)
         |> repo().update_all(set: [variables: var_defs, updated_at: now])
 
-        {:ok, vars}
+        {:ok, fork}
 
       {:error, _} = err ->
         err
