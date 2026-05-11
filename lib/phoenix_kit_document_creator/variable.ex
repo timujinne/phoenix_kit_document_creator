@@ -48,6 +48,8 @@ defmodule PhoenixKitDocumentCreator.Variable do
 
   Returns a list of `%{name: String.t(), kind: :image | :image_list}` maps,
   deduplicated by name, sorted by name.
+
+  Note: if both `{{ image: foo }}` and `{{ images: foo }}` appear with the same name, the first occurrence (by document order) wins.
   """
   @spec extract_image_variables(term()) :: [%{name: String.t(), kind: :image | :image_list}]
   def extract_image_variables(text) when is_binary(text) do
