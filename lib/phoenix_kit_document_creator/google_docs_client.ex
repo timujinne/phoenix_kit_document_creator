@@ -696,11 +696,11 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   occurrence in body content, headers, footers, and table cells, restricted
   to the names supplied.
 
-  **Offset note:** `Regex.scan(..., return: :index)` returns byte offsets.
-  The Google Docs `startIndex` counts UTF-16 code units, not bytes. For
-  ASCII-only templates these are identical. Templates with multi-byte
-  characters (e.g. Cyrillic) *outside* the tag may cause divergence — see
-  Task 16 integration test for the Cyrillic validation.
+  **Offset note:** `Regex.scan(..., return: :index)` returns byte offsets;
+  Google Docs `startIndex` counts UTF-16 code units. The implementation
+  converts byte offsets to codepoint counts (one per BMP char). Supplementary
+  codepoints (rare emoji outside the BMP) would each require two UTF-16 code
+  units and are not yet handled.
   """
   @spec find_image_tag_ranges(map(), [String.t()]) ::
           [%{name: String.t(), start_index: integer(), end_index: integer()}]
@@ -751,15 +751,29 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   defp extract_tag_ranges(_, _), do: []
 
   defp match_to_range(
-         [{full_start, full_len}, _keyword_pos, {name_start, name_len}],
+         [{full_byte_start, full_byte_len}, _keyword_pos, {name_byte_start, name_byte_len}],
          content,
          base,
          names_set
        ) do
-    name = String.slice(content, name_start, name_len)
+    # `Regex.scan` with `return: :index` yields byte offsets. Google Docs
+    # `startIndex` counts UTF-16 code units (one per BMP codepoint, two per
+    # supplementary). We convert byte offsets to codepoint counts using the
+    # binary prefix before the match — for BMP text (Latin, Cyrillic, most
+    # CJK) codepoints equal UTF-16 code units. Surrogate pairs (rare emoji)
+    # would need an additional adjustment; that case is out of scope.
+    full_cp_start = content |> binary_part(0, full_byte_start) |> String.length()
+    full_cp_len = content |> binary_part(full_byte_start, full_byte_len) |> String.length()
+    name = binary_part(content, name_byte_start, name_byte_len)
 
     if MapSet.member?(names_set, name) do
-      [%{name: name, start_index: base + full_start, end_index: base + full_start + full_len}]
+      [
+        %{
+          name: name,
+          start_index: base + full_cp_start,
+          end_index: base + full_cp_start + full_cp_len
+        }
+      ]
     else
       []
     end

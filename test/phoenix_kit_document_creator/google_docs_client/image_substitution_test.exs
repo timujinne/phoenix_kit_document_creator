@@ -100,6 +100,34 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient.ImageSubstitutionTest do
       assert [%{name: "logo"}] = GoogleDocsClient.find_image_tag_ranges(doc, ["logo"])
     end
 
+    test "Cyrillic text before tag uses UTF-16 code unit offsets not byte offsets" do
+      # "Привет, " = 8 chars, 14 UTF-8 bytes — verifies we use codepoint
+      # (UTF-16) offsets, not byte offsets. base = 1 (Google-assigned).
+      # The tag "{{ image: logo }}" starts at codepoint 8, so
+      # start_index = 1 + 8 = 9, end_index = 1 + 8 + 17 = 26.
+      doc = %{
+        "body" => %{
+          "content" => [
+            %{
+              "paragraph" => %{
+                "elements" => [
+                  %{
+                    "startIndex" => 1,
+                    "endIndex" => 27,
+                    "textRun" => %{"content" => "Привет, {{ image: logo }}"}
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+
+      [range] = GoogleDocsClient.find_image_tag_ranges(doc, ["logo"])
+      assert range.start_index == 9
+      assert range.end_index == 26
+    end
+
     test "walks into table cells" do
       doc = %{
         "body" => %{
