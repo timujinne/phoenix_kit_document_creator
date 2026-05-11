@@ -63,20 +63,20 @@ defmodule PhoenixKitDocumentCreator.Variable do
   def extract_image_variables(_), do: []
 
   @doc """
-  Extracts variable names from text by scanning for `{{ variable_name }}` patterns.
+  Convenience entry point that runs both detectors and returns a forked map.
 
-  Returns a sorted list of unique variable names (strings).
+  Returns `%{text: [String.t()], image: [%{name, kind}]}`.
   """
-  @spec extract_variables(term()) :: [String.t()]
-  def extract_variables(text) when is_binary(text) do
-    ~r/\{\{\s*(\w+)\s*\}\}/
-    |> Regex.scan(text)
-    |> Enum.map(fn [_full, name] -> name end)
-    |> Enum.uniq()
-    |> Enum.sort()
+  @spec extract_variables(term()) :: %{
+          text: [String.t()],
+          image: [%{name: String.t(), kind: :image | :image_list}]
+        }
+  def extract_variables(text) do
+    %{
+      text: extract_string_variables(text),
+      image: extract_image_variables(text)
+    }
   end
-
-  def extract_variables(_), do: []
 
   @doc """
   Builds Variable structs from a list of variable names, guessing types from names.

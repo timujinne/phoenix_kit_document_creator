@@ -65,4 +65,30 @@ defmodule PhoenixKitDocumentCreator.VariableTest do
       assert PhoenixKitDocumentCreator.Variable.extract_image_variables(nil) == []
     end
   end
+
+  describe "extract_variables/1 (fork)" do
+    test "returns string and image variables separately" do
+      text = """
+      {{ client_name }} {{ image: logo }} {{ name }} {{ images: photos }}
+      """
+
+      assert PhoenixKitDocumentCreator.Variable.extract_variables(text) == %{
+               text: ["client_name", "name"],
+               image: [
+                 %{name: "logo", kind: :image},
+                 %{name: "photos", kind: :image_list}
+               ]
+             }
+    end
+
+    test "returns empty fork for empty text" do
+      assert PhoenixKitDocumentCreator.Variable.extract_variables("") ==
+               %{text: [], image: []}
+    end
+
+    test "returns empty fork for non-binary" do
+      assert PhoenixKitDocumentCreator.Variable.extract_variables(nil) ==
+               %{text: [], image: []}
+    end
+  end
 end
