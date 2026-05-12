@@ -92,6 +92,45 @@ if Code.ensure_loaded?(PhoenixKitDocumentCreator.DataCase) do
                    %{"default_width_px" => 500}
                  )
       end
+
+      test "empty default_width_px is dropped, existing value preserved", %{template: t} do
+        {:ok, _} =
+          Documents.update_template_variable_config(
+            t.google_doc_id,
+            "logo",
+            %{"default_width_px" => ""}
+          )
+
+        reloaded = Repo.reload(t)
+        logo_var = Enum.find(reloaded.variables, &(&1["name"] == "logo"))
+        assert logo_var["config"]["default_width_px"] == 400
+      end
+
+      test "empty max_count means nil (no limit)", %{template: t} do
+        {:ok, _} =
+          Documents.update_template_variable_config(
+            t.google_doc_id,
+            "photos",
+            %{"max_count" => ""}
+          )
+
+        reloaded = Repo.reload(t)
+        photos_var = Enum.find(reloaded.variables, &(&1["name"] == "photos"))
+        assert photos_var["config"]["max_count"] == nil
+      end
+
+      test "garbage string in default_width_px is dropped silently", %{template: t} do
+        {:ok, _} =
+          Documents.update_template_variable_config(
+            t.google_doc_id,
+            "logo",
+            %{"default_width_px" => "abc"}
+          )
+
+        reloaded = Repo.reload(t)
+        logo_var = Enum.find(reloaded.variables, &(&1["name"] == "logo"))
+        assert logo_var["config"]["default_width_px"] == 400
+      end
     end
   end
 end

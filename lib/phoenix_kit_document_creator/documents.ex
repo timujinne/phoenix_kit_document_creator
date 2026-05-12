@@ -164,20 +164,39 @@ defmodule PhoenixKitDocumentCreator.Documents do
   end
 
   defp coerce_config(config) do
-    Map.new(config, fn
-      {"default_width_px", v} -> {"default_width_px", to_integer(v)}
-      {"max_count", v} -> {"max_count", to_integer_or_nil(v)}
+    config
+    |> Enum.map(fn
+      {"default_width_px", v} -> {"default_width_px", parse_integer(v)}
+      {"max_count", v} -> {"max_count", parse_integer_or_nil(v)}
       {k, v} -> {k, v}
     end)
+    |> Enum.reject(fn {_k, v} -> v == :skip end)
+    |> Map.new()
   end
 
-  defp to_integer(v) when is_integer(v), do: v
-  defp to_integer(v) when is_binary(v), do: String.to_integer(v)
+  defp parse_integer(v) when is_integer(v), do: v
 
-  defp to_integer_or_nil(nil), do: nil
-  defp to_integer_or_nil(""), do: nil
-  defp to_integer_or_nil(v) when is_integer(v), do: v
-  defp to_integer_or_nil(v) when is_binary(v), do: String.to_integer(v)
+  defp parse_integer(v) when is_binary(v) do
+    case Integer.parse(v) do
+      {n, ""} -> n
+      _ -> :skip
+    end
+  end
+
+  defp parse_integer(_), do: :skip
+
+  defp parse_integer_or_nil(nil), do: nil
+  defp parse_integer_or_nil(""), do: nil
+  defp parse_integer_or_nil(v) when is_integer(v), do: v
+
+  defp parse_integer_or_nil(v) when is_binary(v) do
+    case Integer.parse(v) do
+      {n, ""} -> n
+      _ -> :skip
+    end
+  end
+
+  defp parse_integer_or_nil(_), do: :skip
 
   @doc "List templates from the local DB. Returns maps compatible with the LiveView."
   @spec list_templates_from_db() :: [map()]
