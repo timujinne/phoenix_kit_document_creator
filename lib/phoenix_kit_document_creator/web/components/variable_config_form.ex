@@ -59,6 +59,7 @@ defmodule PhoenixKitDocumentCreator.Web.Components.VariableConfigForm do
         <select
           name={"variables[#{@variable.name}][config][separator]"}
           class="select select-bordered select-sm w-full"
+          phx-debounce="500"
         >
           <option value="newline" selected={@current_separator == "newline"}>{gettext("New line")}</option>
           <option value="space" selected={@current_separator == "space"}>{gettext("Space")}</option>
