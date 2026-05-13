@@ -30,6 +30,7 @@ defmodule PhoenixKitDocumentCreator.Schemas.Template do
     field(:path, :string)
     field(:folder_id, :string)
     field(:language, :string)
+    field(:category, :string)
 
     field(:content_html, :string, default: "")
     field(:content_css, :string, default: "")
@@ -75,7 +76,8 @@ defmodule PhoenixKitDocumentCreator.Schemas.Template do
     :config,
     :data,
     :thumbnail,
-    :created_by_uuid
+    :created_by_uuid,
+    :category
   ]
 
   def changeset(template, attrs) do

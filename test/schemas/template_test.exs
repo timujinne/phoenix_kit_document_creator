@@ -240,6 +240,24 @@ defmodule PhoenixKitDocumentCreator.Schemas.TemplateTest do
     end
   end
 
+  describe "category field (V114)" do
+    test "accepts a category string" do
+      cs = changeset(%{name: "T", category: "invoices"})
+      assert cs.valid?
+      assert cs.changes.category == "invoices"
+    end
+
+    test "accepts nil category (nullable)" do
+      cs = changeset(%{name: "T", category: nil})
+      assert cs.valid?
+    end
+
+    test "category is optional — changeset valid without it" do
+      cs = changeset(%{name: "T"})
+      assert cs.valid?
+    end
+  end
+
   describe "language_changeset/2" do
     # Focused changeset used by both the create-time language stamp
     # (`Documents.create_template/2`) and the post-create updater
