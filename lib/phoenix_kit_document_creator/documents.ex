@@ -28,7 +28,9 @@ defmodule PhoenixKitDocumentCreator.Documents do
   alias PhoenixKitDocumentCreator.GoogleDocsClient
   alias PhoenixKitDocumentCreator.GoogleDocsClient.DriveWalker
   alias PhoenixKitDocumentCreator.Schemas.Document
+  alias PhoenixKitDocumentCreator.Schemas.DocumentSection
   alias PhoenixKitDocumentCreator.Schemas.Template
+  alias PhoenixKitDocumentCreator.Schemas.TemplatePreset
 
   @module_key "document_creator"
   @pubsub_topic "document_creator:files"
@@ -1891,6 +1893,134 @@ defmodule PhoenixKitDocumentCreator.Documents do
     case get_folder_ids() do
       %{documents_folder_id: id} when is_binary(id) -> GoogleDocsClient.get_folder_url(id)
       _ -> nil
+    end
+  end
+
+  # ===========================================================================
+  # Presets / recipes
+  # ===========================================================================
+
+  @doc """
+  Returns the sections of a document as an ordered list of plain maps.
+
+  Each map contains `:template_uuid`, `:position`, `:variable_values`, and
+  `:image_params`. The list is ordered by position ascending and represents
+  a point-in-time snapshot — it does not check whether templates still exist.
+  """
+  @spec recipe_for(Document.t()) ::
+          [
+            %{
+              template_uuid: binary() | nil,
+              position: non_neg_integer(),
+              variable_values: map(),
+              image_params: map()
+            }
+          ]
+  def recipe_for(%Document{uuid: doc_uuid}) do
+    DocumentSection
+    |> where([s], s.document_uuid == ^doc_uuid)
+    |> order_by([s], asc: s.position)
+    |> repo().all()
+    |> Enum.map(&Map.take(&1, [:template_uuid, :position, :variable_values, :image_params]))
+  end
+
+  @doc """
+  Persists a named, reusable preset (template composition recipe).
+
+  Required attrs: `:name`, `:created_by_uuid`. Optional: `:description`,
+  `:category`, `:scope_type`, `:scope_id`, `:sections`.
+  """
+  @spec save_preset(map()) :: {:ok, TemplatePreset.t()} | {:error, Ecto.Changeset.t()}
+  def save_preset(attrs) do
+    %TemplatePreset{} |> TemplatePreset.changeset(attrs) |> repo().insert()
+  end
+
+  @doc """
+  Lists presets, optionally filtered by any combination of `:category`,
+  `:scope_type`, and `:scope_id`. Results are ordered by name ascending.
+  """
+  @spec list_presets(%{
+          optional(:category) => String.t(),
+          optional(:scope_type) => String.t(),
+          optional(:scope_id) => String.t()
+        }) :: [TemplatePreset.t()]
+  def list_presets(filter \\ %{}) do
+    TemplatePreset
+    |> maybe_filter(:category, filter[:category])
+    |> maybe_filter(:scope_type, filter[:scope_type])
+    |> maybe_filter(:scope_id, filter[:scope_id])
+    |> order_by([p], asc: p.name)
+    |> repo().all()
+  end
+
+  defp maybe_filter(q, _field, nil), do: q
+  defp maybe_filter(q, field, value), do: from(p in q, where: field(p, ^field) == ^value)
+
+  @doc """
+  Applies a preset by UUID, returning its sections as plain maps.
+
+  Sections whose `template_uuid` no longer exists in the database are silently
+  dropped (a warning is logged listing the removed UUIDs). The remaining
+  sections are returned in position order.
+
+  NOTE: Deliberate deviation from spec line 110 — this function returns
+  `{:ok, [map]} | {:error, :not_found}` instead of the spec's bare `[map]`.
+  This gives callers a clean error path for stale preset references from UI
+  state (e.g. a preset UUID that was deleted server-side). The spec should be
+  updated to match after implementation review.
+  """
+  @spec apply_preset(binary()) ::
+          {:ok,
+           [
+             %{
+               template_uuid: binary(),
+               position: non_neg_integer(),
+               variable_values: map(),
+               image_params: map()
+             }
+           ]}
+          | {:error, :not_found}
+  def apply_preset(preset_uuid) do
+    case repo().get(TemplatePreset, preset_uuid) do
+      nil ->
+        {:error, :not_found}
+
+      preset ->
+        template_uuids = Enum.map(preset.sections, &Map.get(&1, "template_uuid"))
+
+        existing =
+          Template
+          |> where([t], t.uuid in ^template_uuids)
+          |> select([t], t.uuid)
+          |> repo().all()
+          |> MapSet.new()
+
+        {kept, dropped} =
+          Enum.split_with(preset.sections, fn s ->
+            MapSet.member?(existing, Map.get(s, "template_uuid"))
+          end)
+
+        if dropped != [] do
+          dropped_uuids = Enum.map_join(dropped, ", ", &Map.get(&1, "template_uuid"))
+
+          Logger.warning(
+            "apply_preset: dropped #{length(dropped)} section(s) with missing templates: #{dropped_uuids}"
+          )
+        end
+
+        sections =
+          kept
+          |> Enum.sort_by(&Map.get(&1, "position"))
+          |> Enum.map(fn s ->
+            %{
+              template_uuid: Map.get(s, "template_uuid"),
+              position: Map.get(s, "position"),
+              variable_values: Map.get(s, "variable_values", %{}),
+              image_params: Map.get(s, "image_params", %{})
+            }
+          end)
+
+        {:ok, sections}
     end
   end
 end
