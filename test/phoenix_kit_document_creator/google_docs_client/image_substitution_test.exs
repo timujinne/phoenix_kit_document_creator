@@ -167,21 +167,28 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient.ImageSubstitutionTest do
   end
 
   describe "build_single_image_request/2" do
-    test "builds positioned object when z_index > 0" do
+    test "falls back to inline image when z_index > 0 (positioned objects unsupported by Docs API)" do
       cfg = %{default_width_px: 200, opacity: 0.5, z_index: 1}
 
-      request =
-        GoogleDocsClient.build_single_image_request("https://x/img.png",
-          insertion_index: 100,
-          config: cfg
-        )
+      logs =
+        ExUnit.CaptureLog.capture_log(fn ->
+          request =
+            GoogleDocsClient.build_single_image_request("https://x/img.png",
+              insertion_index: 100,
+              config: cfg
+            )
 
-      refute match?(%{insertInlineImage: _}, request)
+          # createPositionedObject is not a valid batchUpdate request type in
+          # the Google Docs API — positioned objects can only be created in
+          # the editor UI. We log and downgrade to insertInlineImage.
+          assert %{insertInlineImage: body} = request
+          assert body.location.index == 100
+          assert body.uri == "https://x/img.png"
+          refute match?(%{createPositionedObject: _}, request)
+        end)
 
-      assert %{createPositionedObject: body} = request
-      assert body.positioning.layout == "WRAP_TEXT"
-      assert body.insertionIndex == 100
-      assert body.uri == "https://x/img.png"
+      assert logs =~ "z_index 1 is not supported"
+      assert logs =~ "opacity 0.5 is not supported"
     end
 
     test "builds inline image when z_index <= 0" do
@@ -213,7 +220,7 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient.ImageSubstitutionTest do
   end
 
   describe "build_image_batch_requests/2 with z_index" do
-    test "z_index > 0 produces createPositionedObject in batch" do
+    test "z_index > 0 falls back to inline image with warning in batch" do
       ranges = [%{name: "logo", start_index: 10, end_index: 27}]
 
       fills = %{
@@ -227,9 +234,17 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient.ImageSubstitutionTest do
         }
       }
 
-      [delete, insert] = GoogleDocsClient.build_image_batch_requests(ranges, fills)
-      assert match?(%{deleteContentRange: _}, delete)
-      assert match?(%{createPositionedObject: %{positioning: %{layout: "WRAP_TEXT"}}}, insert)
+      logs =
+        ExUnit.CaptureLog.capture_log(fn ->
+          [delete, insert] = GoogleDocsClient.build_image_batch_requests(ranges, fills)
+          assert match?(%{deleteContentRange: _}, delete)
+          # createPositionedObject is not a real Docs API request type;
+          # the implementation downgrades to insertInlineImage with a warning.
+          assert match?(%{insertInlineImage: _}, insert)
+          refute match?(%{createPositionedObject: _}, insert)
+        end)
+
+      assert logs =~ "z_index 1 is not supported"
     end
 
     test "z_index 0 (default) produces insertInlineImage in batch" do

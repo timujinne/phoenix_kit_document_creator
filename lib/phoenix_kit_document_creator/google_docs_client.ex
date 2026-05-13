@@ -845,78 +845,60 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
     index = Keyword.fetch!(opts, :insertion_index)
     config = Keyword.fetch!(opts, :config)
     w = Map.get(config, :default_width_px, 400)
-    z = Map.get(config, :z_index, 0)
-    opacity = Map.get(config, :opacity, 1.0)
     media = %{uri: uri, width_px: nil, height_px: nil}
-
-    if opacity != 1.0 do
-      Logger.warning(
-        "image opacity #{opacity} cannot be applied in a single batchUpdate pass; skipped for #{uri}"
-      )
-    end
-
-    if z > 0 do
-      build_positioned_image_request(media, w, index)
-    else
-      insert_inline_image_request(media, w, index)
-    end
+    image_request(media, w, index, config, uri)
   end
 
   defp single_image_inserts(%{media: []}, _index), do: []
 
   defp single_image_inserts(fill, index) do
     %{media: [media | _], default_width_px: w} = fill
-    z = Map.get(fill, :z_index, 0)
-    opacity = Map.get(fill, :opacity, 1.0)
-
-    if opacity != 1.0 do
-      Logger.warning(
-        "image opacity #{opacity} cannot be applied in a single batchUpdate pass; skipped"
-      )
-    end
-
-    request =
-      if z > 0 do
-        build_positioned_image_request(media, w, index)
-      else
-        insert_inline_image_request(media, w, index)
-      end
-
-    [request]
+    [image_request(media, w, index, fill, media[:uri])]
   end
 
   defp list_image_inserts(%{media: []}, _index), do: []
 
   defp list_image_inserts(fill, index) do
     %{media: media, default_width_px: w, separator: sep} = fill
-    z = Map.get(fill, :z_index, 0)
-    opacity = Map.get(fill, :opacity, 1.0)
-
-    if opacity != 1.0 do
-      Logger.warning(
-        "image opacity #{opacity} cannot be applied in a single batchUpdate pass; skipped"
-      )
-    end
-
     reversed = Enum.reverse(media)
+    last_idx = length(reversed) - 1
 
     reversed
     |> Enum.with_index()
     |> Enum.flat_map(fn {m, i} ->
-      img =
-        if z > 0 do
-          build_positioned_image_request(m, w, index)
-        else
-          insert_inline_image_request(m, w, index)
-        end
-
-      if i < length(reversed) - 1 do
-        [img, separator_request(sep, index)]
-      else
-        [img]
-      end
+      img = image_request(m, w, index, fill, m[:uri])
+      if i < last_idx, do: [img, separator_request(sep, index)], else: [img]
     end)
     |> Enum.reject(&is_nil/1)
+  end
+
+  # Build the single batchUpdate request for an image. The Google Docs API
+  # exposes only `insertInlineImage` for programmatic image insertion —
+  # `createPositionedObject` is not a valid `batchUpdate` request type
+  # (positioned objects can only be created interactively in the editor).
+  # `opacity` is also unsupported by the API on any image surface. Both
+  # options are accepted in `config` for forward-compat and ignored with a
+  # warning when set away from the defaults.
+  defp image_request(media, width, index, config, log_ctx) do
+    z = Map.get(config, :z_index, 0)
+    opacity = Map.get(config, :opacity, 1.0)
+
+    if z > 0 do
+      Logger.warning(
+        "image z_index #{z} is not supported by the Google Docs API " <>
+          "(positioned objects can only be created in the editor UI); " <>
+          "falling back to inline insert for #{inspect(log_ctx)}"
+      )
+    end
+
+    if opacity != 1.0 do
+      Logger.warning(
+        "image opacity #{opacity} is not supported by the Google Docs API; " <>
+          "skipped for #{inspect(log_ctx)}"
+      )
+    end
+
+    insert_inline_image_request(media, width, index)
   end
 
   defp insert_inline_image_request(
@@ -933,28 +915,6 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
         objectSize: %{
           width: %{magnitude: default_width_px * @px_to_pt, unit: "PT"},
           height: %{magnitude: scaled_height_px * @px_to_pt, unit: "PT"}
-        }
-      }
-    }
-  end
-
-  defp build_positioned_image_request(
-         %{uri: uri, width_px: w_px, height_px: h_px},
-         default_width_px,
-         index
-       ) do
-    scaled_height_px = scale_height(default_width_px, w_px, h_px)
-
-    %{
-      createPositionedObject: %{
-        insertionIndex: index,
-        uri: uri,
-        objectSize: %{
-          width: %{magnitude: default_width_px * @px_to_pt, unit: "PT"},
-          height: %{magnitude: scaled_height_px * @px_to_pt, unit: "PT"}
-        },
-        positioning: %{
-          layout: "WRAP_TEXT"
         }
       }
     }
