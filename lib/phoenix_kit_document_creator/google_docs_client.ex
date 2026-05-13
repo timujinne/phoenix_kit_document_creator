@@ -791,7 +791,11 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
     |> div(2)
   end
 
-  @px_to_emu 9525
+  # Google Docs `Unit` enum accepts only `PT` or `UNIT_UNSPECIFIED`; 1 px = 0.75 pt
+  # (96 dpi web → 72 dpi PostScript). Earlier versions sent `unit: "EMU"`, which
+  # Google rejects with `INVALID_ARGUMENT` (`google.apps.docs.v1.Unit`), so every
+  # `insertInlineImage` batch failed.
+  @px_to_pt 0.75
 
   @doc """
   Builds the list of `batchUpdate` request maps to substitute image tags.
@@ -820,29 +824,81 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
     end)
   end
 
+  @doc """
+  Builds a single image insert request map.
+
+  Options:
+    - `:insertion_index` — document character index for insertion (required)
+    - `:config` — map with `:default_width_px`, `:opacity`, `:z_index` (required)
+
+  When `z_index > 0`, emits a `createPositionedObject` with `layout = "WRAP_TEXT"`.
+  When `z_index <= 0`, emits `insertInlineImage` (default inline behaviour).
+  Opacity application requires a follow-up `UpdateEmbeddedObjectPropertiesRequest`
+  with the object ID returned by the batchUpdate response — not emitted here.
+  A Logger warning is written when `opacity != 1.0`. This is a documented
+  no-op (open risk) per the spec's "Open Risks" section: applying transparency
+  requires a second batchUpdate pass after the initial insert, using the
+  embedded object ID from the first response. Not yet implemented.
+  """
+  @spec build_single_image_request(String.t(), keyword()) :: map()
+  def build_single_image_request(uri, opts) do
+    index = Keyword.fetch!(opts, :insertion_index)
+    config = Keyword.fetch!(opts, :config)
+    w = Map.get(config, :default_width_px, 400)
+    media = %{uri: uri, width_px: nil, height_px: nil}
+    image_request(media, w, index, config, uri)
+  end
+
   defp single_image_inserts(%{media: []}, _index), do: []
 
-  defp single_image_inserts(%{media: [media | _], default_width_px: w}, index) do
-    [insert_inline_image_request(media, w, index)]
+  defp single_image_inserts(fill, index) do
+    %{media: [media | _], default_width_px: w} = fill
+    [image_request(media, w, index, fill, media[:uri])]
   end
 
   defp list_image_inserts(%{media: []}, _index), do: []
 
-  defp list_image_inserts(%{media: media, default_width_px: w, separator: sep}, index) do
+  defp list_image_inserts(fill, index) do
+    %{media: media, default_width_px: w, separator: sep} = fill
     reversed = Enum.reverse(media)
+    last_idx = length(reversed) - 1
 
     reversed
     |> Enum.with_index()
     |> Enum.flat_map(fn {m, i} ->
-      img = insert_inline_image_request(m, w, index)
-
-      if i < length(reversed) - 1 do
-        [img, separator_request(sep, index)]
-      else
-        [img]
-      end
+      img = image_request(m, w, index, fill, m[:uri])
+      if i < last_idx, do: [img, separator_request(sep, index)], else: [img]
     end)
     |> Enum.reject(&is_nil/1)
+  end
+
+  # Build the single batchUpdate request for an image. The Google Docs API
+  # exposes only `insertInlineImage` for programmatic image insertion —
+  # `createPositionedObject` is not a valid `batchUpdate` request type
+  # (positioned objects can only be created interactively in the editor).
+  # `opacity` is also unsupported by the API on any image surface. Both
+  # options are accepted in `config` for forward-compat and ignored with a
+  # warning when set away from the defaults.
+  defp image_request(media, width, index, config, log_ctx) do
+    z = Map.get(config, :z_index, 0)
+    opacity = Map.get(config, :opacity, 1.0)
+
+    if z > 0 do
+      Logger.warning(
+        "image z_index #{z} is not supported by the Google Docs API " <>
+          "(positioned objects can only be created in the editor UI); " <>
+          "falling back to inline insert for #{inspect(log_ctx)}"
+      )
+    end
+
+    if opacity != 1.0 do
+      Logger.warning(
+        "image opacity #{opacity} is not supported by the Google Docs API; " <>
+          "skipped for #{inspect(log_ctx)}"
+      )
+    end
+
+    insert_inline_image_request(media, width, index)
   end
 
   defp insert_inline_image_request(
@@ -857,8 +913,8 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
         location: %{index: index},
         uri: uri,
         objectSize: %{
-          width: %{magnitude: default_width_px * @px_to_emu, unit: "EMU"},
-          height: %{magnitude: scaled_height_px * @px_to_emu, unit: "EMU"}
+          width: %{magnitude: default_width_px * @px_to_pt, unit: "PT"},
+          height: %{magnitude: scaled_height_px * @px_to_pt, unit: "PT"}
         }
       }
     }
@@ -1120,6 +1176,291 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
         {:error, :thumbnail_fetch_failed}
     end
   end
+
+  # ===========================================================================
+  # Composition helpers (used by Documents.Composer)
+  # ===========================================================================
+
+  @doc """
+  Copy a Google Doc for use as the base of a composed document.
+
+  Returns `{:ok, new_doc_id}`. The copy is named by its source doc ID so it
+  can be identified for best-effort cleanup on rollback before a final name
+  is applied.
+  """
+  @spec copy_document(String.t()) :: {:ok, String.t()} | {:error, term()}
+  def copy_document(source_doc_id) do
+    copy_file(source_doc_id, "composed-doc-#{source_doc_id}")
+  end
+
+  @doc """
+  Append a template's content to an existing Google Doc via batchUpdate.
+
+  Inserts a page break followed by the full text content of `template_doc_id`
+  into `target_doc_id`. Returns `{:ok, {start_index, end_index}}` representing
+  the character range of the inserted content — callers use this for
+  section-scoped substitution.
+  """
+  @spec append_template(String.t(), String.t()) ::
+          {:ok, {integer(), integer()}} | {:error, term()}
+  def append_template(target_doc_id, template_doc_id) do
+    with {:ok, text} <- get_document_text(template_doc_id),
+         {:ok, %{body: current_doc}} <- get_document(target_doc_id) do
+      end_index = document_end_index(current_doc)
+      insert_index = max(end_index - 1, 1)
+
+      requests = [
+        %{insertPageBreak: %{location: %{index: insert_index}}},
+        %{
+          insertText: %{
+            location: %{index: insert_index + 1},
+            text: text
+          }
+        }
+      ]
+
+      case batch_update(target_doc_id, requests) do
+        {:ok, _} ->
+          content_start = insert_index + 1
+          # Use UTF-16 unit count — Google Docs indices count UTF-16 code units,
+          # not graphemes. For BMP-only text these are equal; emoji and rare CJK
+          # codepoints occupy two UTF-16 units (a surrogate pair).
+          content_end = content_start + utf16_units(text)
+          {:ok, {content_start, content_end}}
+
+        {:error, _} = err ->
+          err
+      end
+    end
+  end
+
+  @doc """
+  Return the range `{1, end_index}` of the current content in a Google Doc.
+
+  Used by the Composer to pin section 0's range before any sections are appended.
+  The range starts at index 1 because Google Docs body content always begins at 1.
+  """
+  @spec document_content_range(String.t()) :: {:ok, {1, integer()}} | {:error, term()}
+  def document_content_range(doc_id) do
+    with {:ok, %{body: doc}} <- get_document(doc_id) do
+      {:ok, {1, document_end_index(doc)}}
+    end
+  end
+
+  @doc """
+  Substitute all sections' variables and image params into a Google Doc in a
+  single atomic pass per phase (text then image).
+
+  `sections` is a list of `%{position, variable_values, image_params}` maps.
+  `ranges` maps each section position to its `{start_index, end_index}` in the
+  document. All positions must have a range entry — section 0's range must be
+  provided explicitly (use `document_content_range/1` after copy, before append).
+
+  Each `{{key}}` placeholder in the document is matched against the section whose
+  range contains it; that section's `variable_values[key]` supplies the replacement.
+  Placeholders outside all section ranges are left untouched.
+
+  Text substitution runs before image substitution (per image-substitution.md) and
+  the document is re-fetched between the two phases so image indices are accurate
+  after text edits. All operations within a phase are batched in a single
+  batchUpdate in reverse-index order so no substitution shifts the indices of
+  another.
+  """
+  @spec substitute_all_sections(String.t(), [map()], %{
+          non_neg_integer() => {integer(), integer()}
+        }) ::
+          :ok | {:error, term()}
+  def substitute_all_sections(doc_id, sections, ranges) do
+    # Phase 1: text substitution — one fetch, one batchUpdate in reverse-index order.
+    with {:ok, %{body: doc}} <- get_document(doc_id),
+         {:ok, _} <- substitute_all_text(doc_id, doc, sections, ranges),
+         # Phase 2: image substitution — re-fetch so indices are current after text edits.
+         {:ok, %{body: doc2}} <- get_document(doc_id) do
+      substitute_all_images(doc_id, doc2, sections, ranges)
+    end
+  end
+
+  defp substitute_all_text(doc_id, doc, sections, ranges) do
+    all_keys = sections |> Enum.flat_map(&Map.keys(&1.variable_values)) |> Enum.uniq()
+
+    requests =
+      doc
+      |> body_text_runs()
+      |> Enum.flat_map(&find_text_var_ranges(&1, all_keys))
+      |> Enum.flat_map(fn %{key: key, start_index: s, end_index: e} = match ->
+        case section_for_match(sections, ranges, match) do
+          nil -> []
+          section -> [{key, s, e, to_string(section.variable_values[key])}]
+        end
+      end)
+      |> Enum.sort_by(fn {_, s, _, _} -> s end, :desc)
+      |> Enum.flat_map(fn {_, s, e, value} ->
+        [
+          %{deleteContentRange: %{range: %{startIndex: s, endIndex: e}}},
+          %{insertText: %{location: %{index: s}, text: value}}
+        ]
+      end)
+
+    maybe_batch(&batch_update/2, doc_id, requests)
+  end
+
+  defp substitute_all_images(doc_id, doc2, sections, ranges) do
+    all_image_fills =
+      sections
+      |> Enum.flat_map(fn s ->
+        fills = build_image_fills(s.image_params)
+        range = Map.get(ranges, s.position)
+        Enum.map(fills, fn {name, fill} -> {name, fill, range} end)
+      end)
+
+    if all_image_fills == [] do
+      :ok
+    else
+      # Build a flat fills map for find_image_tag_ranges, then filter each result
+      # to its section's range before building the batch.
+      fills_map = Map.new(all_image_fills, fn {name, fill, _} -> {name, fill} end)
+      range_by_name = Map.new(all_image_fills, fn {name, _, range} -> {name, range} end)
+
+      requests =
+        doc2
+        |> find_image_tag_ranges(Map.keys(fills_map))
+        |> Enum.filter(fn %{name: name, start_index: s} ->
+          in_section_range?(range_by_name, name, s)
+        end)
+        |> build_image_batch_requests(fills_map)
+
+      case maybe_batch(&batch_update/2, doc_id, requests) do
+        {:ok, _} -> :ok
+        {:error, _} = err -> err
+      end
+    end
+  end
+
+  defp in_section_range?(range_by_name, name, s) do
+    case Map.get(range_by_name, name) do
+      nil -> false
+      {rs, re} -> s >= rs and s < re
+    end
+  end
+
+  # Find which section owns a given text match by checking if the match's
+  # start_index falls within that section's range.
+  defp section_for_match(sections, ranges, %{key: key, start_index: s}) do
+    Enum.find(sections, fn section ->
+      case Map.get(ranges, section.position) do
+        {range_start, range_end} ->
+          s >= range_start and s < range_end and Map.has_key?(section.variable_values, key)
+
+        _ ->
+          false
+      end
+    end)
+  end
+
+  # Walk body content and return all textRun elements as %{content, startIndex}.
+  defp body_text_runs(doc) do
+    (get_in(doc, ["body", "content"]) || [])
+    |> Enum.flat_map(&walk_block/1)
+    |> Enum.filter(&match?(%{"textRun" => _, "startIndex" => _}, &1))
+  end
+
+  @text_var_regex ~r/\{\{\s*(\w+)\s*\}\}/
+
+  # Find {{key}} occurrences in a textRun element for the given key names.
+  # Returns %{key, start_index, end_index} with UTF-16 index arithmetic.
+  defp find_text_var_ranges(%{"textRun" => %{"content" => content}, "startIndex" => base}, keys) do
+    keys_set = MapSet.new(keys)
+
+    Regex.scan(@text_var_regex, content, return: :index)
+    |> Enum.flat_map(fn [{full_byte_start, full_byte_len}, {name_byte_start, name_byte_len}] ->
+      name = binary_part(content, name_byte_start, name_byte_len)
+
+      if MapSet.member?(keys_set, name) do
+        u16_start = content |> binary_part(0, full_byte_start) |> utf16_units()
+        u16_len = content |> binary_part(full_byte_start, full_byte_len) |> utf16_units()
+
+        [%{key: name, start_index: base + u16_start, end_index: base + u16_start + u16_len}]
+      else
+        []
+      end
+    end)
+  end
+
+  defp find_text_var_ranges(_, _), do: []
+
+  @doc """
+  Delete (trash) a Google Doc. Used for best-effort cleanup after a failed composition.
+  Returns `:ok` or `{:error, reason}`.
+  """
+  @spec delete_document(String.t()) :: :ok | {:error, term()}
+  def delete_document(doc_id) do
+    with {:ok, fid} <- validate_file_id(doc_id) do
+      case authenticated_request(:delete, "#{@drive_base}/files/#{fid}") do
+        {:ok, %{status: status}} when status in 200..299 ->
+          :ok
+
+        {:ok, %{status: 204}} ->
+          :ok
+
+        {:ok, %{body: body}} ->
+          log_drive_error("delete failed", body)
+          {:error, :delete_failed}
+
+        {:error, _} = err ->
+          err
+      end
+    end
+  end
+
+  defp document_end_index(doc) do
+    content = get_in(doc, ["body", "content"]) || []
+
+    content
+    |> Enum.flat_map(fn el ->
+      case el do
+        %{"paragraph" => %{"elements" => elements}} ->
+          Enum.map(elements, &Map.get(&1, "endIndex", 0))
+
+        _ ->
+          [Map.get(el, "endIndex", 0)]
+      end
+    end)
+    |> Enum.max(fn -> 1 end)
+  end
+
+  defp build_image_fills(image_params) when map_size(image_params) == 0, do: %{}
+
+  defp build_image_fills(image_params) do
+    Map.new(image_params, fn {name, params} ->
+      kind = if Map.get(params, "kind") == "image_list", do: :image_list, else: :image
+      media_items = build_media_items(params)
+
+      fill = %{
+        kind: kind,
+        default_width_px: Map.get(params, "width_px", 400),
+        opacity: Map.get(params, "opacity", 1.0),
+        z_index: Map.get(params, "z_index", 0),
+        separator: normalize_separator_atom(Map.get(params, "separator", "newline")),
+        media: media_items
+      }
+
+      {name, fill}
+    end)
+  end
+
+  defp build_media_items(%{"media" => media}) when is_list(media) do
+    Enum.map(media, fn m ->
+      %{uri: Map.get(m, "uri", ""), width_px: Map.get(m, "width_px"), height_px: nil}
+    end)
+  end
+
+  defp build_media_items(_), do: []
+
+  defp normalize_separator_atom("newline"), do: :newline
+  defp normalize_separator_atom("space"), do: :space
+  defp normalize_separator_atom(:newline), do: :newline
+  defp normalize_separator_atom(:space), do: :space
+  defp normalize_separator_atom(_), do: :none
 
   @doc "Get the edit URL for a Google Doc."
   @spec get_edit_url(term()) :: String.t() | nil

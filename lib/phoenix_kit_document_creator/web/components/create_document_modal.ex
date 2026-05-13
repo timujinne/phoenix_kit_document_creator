@@ -9,6 +9,8 @@ defmodule PhoenixKitDocumentCreator.Web.Components.CreateDocumentModal do
   use Phoenix.Component
   use Gettext, backend: PhoenixKitDocumentCreator.Gettext
 
+  alias PhoenixKitDocumentCreator.Web.Components.VariableConfigForm
+
   attr(:open, :boolean, required: true)
   attr(:templates, :list, default: [])
   attr(:step, :string, default: "choose")
@@ -95,7 +97,7 @@ defmodule PhoenixKitDocumentCreator.Web.Components.CreateDocumentModal do
       </div>
     </div>
 
-    <form phx-submit="modal_create_from_template" class="mt-4 space-y-3">
+    <form phx-submit="modal_create_from_template" phx-change="update_variable_config" class="mt-4 space-y-3">
       <input type="hidden" name="template_id" value={@selected_template["id"]} />
 
       <div class="form-control">
@@ -122,8 +124,10 @@ defmodule PhoenixKitDocumentCreator.Web.Components.CreateDocumentModal do
             />
           <% :image -> %>
             {render_image_picker(assign(assigns, :var, var))}
+            <VariableConfigForm.config_form variable={var} />
           <% :image_list -> %>
             {render_image_list_picker(assign(assigns, :var, var))}
+            <VariableConfigForm.config_form variable={var} />
           <% _ -> %>
             <input
               type="text"

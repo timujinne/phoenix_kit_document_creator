@@ -24,10 +24,13 @@ defmodule PhoenixKitDocumentCreator.Documents do
   require Logger
 
   alias PhoenixKit.Modules.Languages
+  alias PhoenixKitDocumentCreator.Documents.Composer
   alias PhoenixKitDocumentCreator.GoogleDocsClient
   alias PhoenixKitDocumentCreator.GoogleDocsClient.DriveWalker
   alias PhoenixKitDocumentCreator.Schemas.Document
+  alias PhoenixKitDocumentCreator.Schemas.DocumentSection
   alias PhoenixKitDocumentCreator.Schemas.Template
+  alias PhoenixKitDocumentCreator.Schemas.TemplatePreset
 
   @module_key "document_creator"
   @pubsub_topic "document_creator:files"
@@ -125,6 +128,78 @@ defmodule PhoenixKitDocumentCreator.Documents do
         end)
     end
   end
+
+  @doc """
+  Update the `config` map of a single variable on a template's `variables` jsonb.
+
+  Merges `new_config` (string-keyed map) into the existing variable's config, coercing
+  integer-shaped strings to integers (for inputs from HTML form fields).
+
+  Returns `{:ok, template}` on success or `{:error, :not_found}` if no template
+  matches the given file_id.
+  """
+  @spec update_template_variable_config(String.t(), String.t(), map()) ::
+          {:ok, Template.t()} | {:error, :not_found | Ecto.Changeset.t()}
+  def update_template_variable_config(template_file_id, var_name, new_config)
+      when is_binary(template_file_id) and is_binary(var_name) and is_map(new_config) do
+    case repo().get_by(Template, google_doc_id: template_file_id) do
+      nil ->
+        {:error, :not_found}
+
+      template ->
+        updated_vars =
+          Enum.map(template.variables || [], fn
+            %{"name" => ^var_name} = var ->
+              existing_config = var["config"] || %{}
+              merged = Map.merge(existing_config, coerce_config(new_config))
+              Map.put(var, "config", merged)
+
+            var ->
+              var
+          end)
+
+        now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+        template
+        |> Ecto.Changeset.change(variables: updated_vars, updated_at: now)
+        |> repo().update()
+    end
+  end
+
+  defp coerce_config(config) do
+    config
+    |> Enum.map(fn
+      {"default_width_px", v} -> {"default_width_px", parse_integer(v)}
+      {"max_count", v} -> {"max_count", parse_integer_or_nil(v)}
+      {k, v} -> {k, v}
+    end)
+    |> Enum.reject(fn {_k, v} -> v == :skip end)
+    |> Map.new()
+  end
+
+  defp parse_integer(v) when is_integer(v), do: v
+
+  defp parse_integer(v) when is_binary(v) do
+    case Integer.parse(v) do
+      {n, ""} -> n
+      _ -> :skip
+    end
+  end
+
+  defp parse_integer(_), do: :skip
+
+  defp parse_integer_or_nil(nil), do: nil
+  defp parse_integer_or_nil(""), do: nil
+  defp parse_integer_or_nil(v) when is_integer(v), do: v
+
+  defp parse_integer_or_nil(v) when is_binary(v) do
+    case Integer.parse(v) do
+      {n, ""} -> n
+      _ -> :skip
+    end
+  end
+
+  defp parse_integer_or_nil(_), do: :skip
 
   @doc "List templates from the local DB. Returns maps compatible with the LiveView."
   @spec list_templates_from_db() :: [map()]
@@ -1057,6 +1132,67 @@ defmodule PhoenixKitDocumentCreator.Documents do
     end
   end
 
+  @doc """
+  Set or clear the category for a template identified by `google_doc_id`.
+
+  Pass `nil` or `""` to clear the category. On success, logs a
+  `template.category_updated` activity row with `category_from`/`category_to`
+  metadata and broadcasts `:files_changed` so connected LiveViews resync.
+  On `{:error, changeset}`, logs a failed-mutation activity row (matching the
+  `update_template_language/3` pattern). Returns `{:error, :not_found}` when
+  no template row exists for `google_doc_id`.
+
+  Options: `:actor_uuid` — stored on the activity row.
+  """
+  @spec update_template_category(String.t(), String.t() | nil, keyword()) ::
+          {:ok, Template.t()} | {:error, :not_found | Ecto.Changeset.t()}
+  def update_template_category(google_doc_id, category, opts \\ [])
+      when is_binary(google_doc_id) do
+    normalized =
+      case category do
+        nil -> nil
+        "" -> nil
+        value when is_binary(value) -> value
+      end
+
+    case repo().get_by(Template, google_doc_id: google_doc_id) do
+      nil ->
+        {:error, :not_found}
+
+      %Template{category: previous} = template ->
+        template
+        |> Template.changeset(%{category: normalized})
+        |> repo().update()
+        |> case do
+          {:ok, updated} ->
+            log_activity(%{
+              action: "template.category_updated",
+              mode: "manual",
+              actor_uuid: opts[:actor_uuid],
+              resource_type: "template",
+              resource_uuid: updated.uuid,
+              metadata: %{
+                "name" => updated.name,
+                "google_doc_id" => updated.google_doc_id,
+                "category_from" => previous,
+                "category_to" => updated.category
+              }
+            })
+
+            broadcast_files_changed()
+            {:ok, updated}
+
+          {:error, _changeset} = err ->
+            log_failed_mutation("template.category_updated", "template", opts, %{
+              "google_doc_id" => google_doc_id,
+              "category_to" => normalized
+            })
+
+            err
+        end
+    end
+  end
+
   defp register_existing(kind, attrs, opts) do
     with {:ok, a} <- normalize_register_attrs(attrs),
          file = %{"id" => a.google_doc_id, "name" => a.name},
@@ -1574,6 +1710,52 @@ defmodule PhoenixKitDocumentCreator.Documents do
   # Variables
   # ===========================================================================
 
+  # ===========================================================================
+  # Composition
+  # ===========================================================================
+
+  @doc """
+  Compose N template sections into a single Google Doc, persisting the recipe.
+
+  Required opts: `:created_by_uuid`, `:name`. Optional: `:separator` (default `:page_break`).
+
+  Variable substitution is range-scoped per section: each section's `variable_values`
+  are applied only within the character range that section occupies in the composed doc.
+  Identical placeholder keys in different sections (e.g. `{{name}}` in section 0 and
+  section 1) resolve independently.
+  """
+  @spec create_composed_document(
+          [Composer.section_input()],
+          keyword()
+        ) :: {:ok, Document.t()} | {:error, term()}
+  def create_composed_document(sections, opts) do
+    Composer.compose(sections, opts)
+  end
+
+  @doc """
+  Returns the image variable slots defined in a template's Google Doc.
+
+  Fetches the current document text via the Google Docs client and extracts
+  all `{{ image: name }}` / `{{ images: name }}` tags, returning a list of
+  `%{name: String.t(), kind: :image | :image_list}` maps sorted by name.
+
+  Returns `{:error, :not_found}` if no template exists for the given UUID.
+  """
+  @spec image_slots_for_template(UUIDv7.t()) ::
+          {:ok, [%{name: String.t(), kind: :image | :image_list}]}
+          | {:error, :not_found | term()}
+  def image_slots_for_template(template_uuid) do
+    case repo().get(Template, template_uuid) do
+      nil ->
+        {:error, :not_found}
+
+      template ->
+        with {:ok, text} <- docs_client().get_document_text(template.google_doc_id) do
+          {:ok, PhoenixKitDocumentCreator.Variable.extract_image_variables(text)}
+        end
+    end
+  end
+
   @doc "Detect `{{ variables }}` in a Google Doc's text content."
   # No activity log entry: this is a cache update (variables are derived
   # from the Doc's text and re-detected every time the modal selects a
@@ -1772,6 +1954,134 @@ defmodule PhoenixKitDocumentCreator.Documents do
     case get_folder_ids() do
       %{documents_folder_id: id} when is_binary(id) -> GoogleDocsClient.get_folder_url(id)
       _ -> nil
+    end
+  end
+
+  # ===========================================================================
+  # Presets / recipes
+  # ===========================================================================
+
+  @doc """
+  Returns the sections of a document as an ordered list of plain maps.
+
+  Each map contains `:template_uuid`, `:position`, `:variable_values`, and
+  `:image_params`. The list is ordered by position ascending and represents
+  a point-in-time snapshot — it does not check whether templates still exist.
+  """
+  @spec recipe_for(Document.t()) ::
+          [
+            %{
+              template_uuid: binary() | nil,
+              position: non_neg_integer(),
+              variable_values: map(),
+              image_params: map()
+            }
+          ]
+  def recipe_for(%Document{uuid: doc_uuid}) do
+    DocumentSection
+    |> where([s], s.document_uuid == ^doc_uuid)
+    |> order_by([s], asc: s.position)
+    |> repo().all()
+    |> Enum.map(&Map.take(&1, [:template_uuid, :position, :variable_values, :image_params]))
+  end
+
+  @doc """
+  Persists a named, reusable preset (template composition recipe).
+
+  Required attrs: `:name`, `:created_by_uuid`. Optional: `:description`,
+  `:category`, `:scope_type`, `:scope_id`, `:sections`.
+  """
+  @spec save_preset(map()) :: {:ok, TemplatePreset.t()} | {:error, Ecto.Changeset.t()}
+  def save_preset(attrs) do
+    %TemplatePreset{} |> TemplatePreset.changeset(attrs) |> repo().insert()
+  end
+
+  @doc """
+  Lists presets, optionally filtered by any combination of `:category`,
+  `:scope_type`, and `:scope_id`. Results are ordered by name ascending.
+  """
+  @spec list_presets(%{
+          optional(:category) => String.t(),
+          optional(:scope_type) => String.t(),
+          optional(:scope_id) => String.t()
+        }) :: [TemplatePreset.t()]
+  def list_presets(filter \\ %{}) do
+    TemplatePreset
+    |> maybe_filter(:category, filter[:category])
+    |> maybe_filter(:scope_type, filter[:scope_type])
+    |> maybe_filter(:scope_id, filter[:scope_id])
+    |> order_by([p], asc: p.name)
+    |> repo().all()
+  end
+
+  defp maybe_filter(q, _field, nil), do: q
+  defp maybe_filter(q, field, value), do: from(p in q, where: field(p, ^field) == ^value)
+
+  @doc """
+  Applies a preset by UUID, returning its sections as plain maps.
+
+  Sections whose `template_uuid` no longer exists in the database are silently
+  dropped (a warning is logged listing the removed UUIDs). The remaining
+  sections are returned in position order.
+
+  NOTE: Deliberate deviation from spec line 110 — this function returns
+  `{:ok, [map]} | {:error, :not_found}` instead of the spec's bare `[map]`.
+  This gives callers a clean error path for stale preset references from UI
+  state (e.g. a preset UUID that was deleted server-side). The spec should be
+  updated to match after implementation review.
+  """
+  @spec apply_preset(binary()) ::
+          {:ok,
+           [
+             %{
+               template_uuid: binary(),
+               position: non_neg_integer(),
+               variable_values: map(),
+               image_params: map()
+             }
+           ]}
+          | {:error, :not_found}
+  def apply_preset(preset_uuid) do
+    case repo().get(TemplatePreset, preset_uuid) do
+      nil ->
+        {:error, :not_found}
+
+      preset ->
+        template_uuids = Enum.map(preset.sections, &Map.get(&1, "template_uuid"))
+
+        existing =
+          Template
+          |> where([t], t.uuid in ^template_uuids)
+          |> select([t], t.uuid)
+          |> repo().all()
+          |> MapSet.new()
+
+        {kept, dropped} =
+          Enum.split_with(preset.sections, fn s ->
+            MapSet.member?(existing, Map.get(s, "template_uuid"))
+          end)
+
+        if dropped != [] do
+          dropped_uuids = Enum.map_join(dropped, ", ", &Map.get(&1, "template_uuid"))
+
+          Logger.warning(
+            "apply_preset: dropped #{length(dropped)} section(s) with missing templates: #{dropped_uuids}"
+          )
+        end
+
+        sections =
+          kept
+          |> Enum.sort_by(&Map.get(&1, "position"))
+          |> Enum.map(fn s ->
+            %{
+              template_uuid: Map.get(s, "template_uuid"),
+              position: Map.get(s, "position"),
+              variable_values: Map.get(s, "variable_values", %{}),
+              image_params: Map.get(s, "image_params", %{})
+            }
+          end)
+
+        {:ok, sections}
     end
   end
 end

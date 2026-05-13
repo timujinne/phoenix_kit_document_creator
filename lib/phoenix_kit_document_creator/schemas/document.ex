@@ -47,6 +47,12 @@ defmodule PhoenixKitDocumentCreator.Schemas.Document do
     field(:footer_css, :string, default: "")
     field(:footer_height, :string, default: "20mm")
 
+    has_many(:sections, PhoenixKitDocumentCreator.Schemas.DocumentSection,
+      foreign_key: :document_uuid,
+      references: :uuid,
+      preload_order: [asc: :position]
+    )
+
     field(:config, :map, default: %{"paper_size" => "a4", "orientation" => "portrait"})
     field(:data, :map, default: %{})
     field(:thumbnail, :string)

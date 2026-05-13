@@ -39,12 +39,13 @@ defmodule PhoenixKitDocumentCreator.MixProject do
       # Docs
       name: "PhoenixKitDocumentCreator",
       source_url: @source_url,
-      docs: docs()
+      docs: docs(),
+      compilers: [:phoenix_kit_css_sources] ++ Mix.compilers()
     ]
   end
 
   def application do
-    [extra_applications: [:logger, :gettext]]
+    [extra_applications: [:logger, :gettext], mod: {PhoenixKitDocumentCreator.Application, []}]
   end
 
   # test/support/ is compiled only in :test so DataCase and TestRepo

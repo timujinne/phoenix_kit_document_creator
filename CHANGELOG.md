@@ -8,6 +8,7 @@
 - `GoogleDocsClient.substitute_images/2` — walks `documents.get` content, finds every image tag occurrence by UTF-16 code unit offset, then issues a single `batchUpdate` with `DeleteContentRange` + `InsertInlineImage` per occurrence. Handles both single and list cases; inserts are ordered from last to first occurrence to preserve indices.
 - `Errors` atoms: `:image_not_found`, `:image_url_not_public`, `:image_insert_failed`, `:image_tag_not_found`.
 - Admin fill form: `:image` variables render a "Choose image" button; `:image_list` variables render "Choose images" (multi-select). Sequential media picks accumulate via `picking_existing` URL param so earlier selections are not lost when returning from the `MediaBrowser`.
+- Persistence for image-variable `config` edits: `Documents.update_template_variable_config/3` writes per-variable config (`default_width_px`, `separator`, `max_count`) back to `phoenix_kit_doc_templates.variables` jsonb on `phx-change` from the modal form. Per-template scope, broadcasted via `broadcast_files_changed/0`. `VariableConfigForm` is now rendered inside `CreateDocumentModal` for `:image` and `:image_list` variables.
 
 ### Changed
 
@@ -23,8 +24,6 @@
 - `DocumentsLive`: media-picker round-trip JSON now uses the built-in `JSON` module (Elixir 1.18+) instead of `Jason`, matching the rest of the codebase.
 
 ### Known limitations (deferred to follow-ups)
-
-- `VariableConfigForm` defines a component but is not yet rendered by any LiveView — config edits cannot be entered by operators. Defaults from `Variable.build_definitions/1` (400px width, newline separator, no max_count) are used at fill time.
 - No telemetry / observability around the image batch operations.
 - E2E integration test (`test/integration/image_substitution_integration_test.exs`) requires `PHOENIX_KIT_DOC_CREATOR_DEV_OAUTH` and a real dev Google account to run.
 - The image-variable regex `~r/\{\{\s*(image|images)\s*:\s*(\w+)\s*\}\}/` is intentionally duplicated between `Variable` and `GoogleDocsClient` — each module owns its own parsing to avoid a shared dependency.

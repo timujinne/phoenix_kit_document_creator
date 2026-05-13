@@ -96,4 +96,78 @@ defmodule PhoenixKitDocumentCreator.LiveCase do
   def put_test_scope(conn, scope) do
     Plug.Test.init_test_session(conn, %{"phoenix_kit_test_scope" => scope})
   end
+
+  @doc """
+  Mounts a LiveComponent in isolation for testing, returning `{:ok, view, html}`.
+
+  Accepts the component module and a map of assigns. The returned view
+  is a full Phoenix.LiveViewTest view backed by
+  `PhoenixKitDocumentCreator.Test.ComponentHostLive`, so all LiveViewTest
+  helpers (element/2, render_click/1, render_change/2, etc.) work normally.
+
+  The host LiveView forwards `{:update, assigns}` messages so tests can
+  simulate external re-renders:
+
+      send(view.pid, {:update, %{current_selection: ["uuid-1"]}})
+
+  Messages the component sends via `send(self(), ...)` land in the
+  test process inbox because the host LiveView forwards unknown messages
+  back to the test process.
+  """
+  def render_live(component, assigns) do
+    conn =
+      Phoenix.ConnTest.build_conn()
+      |> Plug.Test.init_test_session(%{
+        "component_host_module" => component,
+        "component_host_assigns" => assigns,
+        "component_host_test_pid" => self()
+      })
+
+    Phoenix.LiveViewTest.__isolated__(
+      conn,
+      PhoenixKitDocumentCreator.Test.Endpoint,
+      PhoenixKitDocumentCreator.Test.ComponentHostLive,
+      []
+    )
+  end
+end
+
+defmodule PhoenixKitDocumentCreator.Test.ComponentHostLive do
+  @moduledoc false
+  use Phoenix.LiveView
+
+  @impl true
+  def mount(_params, session, socket) do
+    component = session["component_host_module"]
+    assigns = session["component_host_assigns"]
+    test_pid = session["component_host_test_pid"]
+
+    socket =
+      socket
+      |> assign(:comp_module, component)
+      |> assign(:comp_assigns, assigns)
+      |> assign(:test_pid, test_pid)
+
+    {:ok, socket}
+  end
+
+  @impl true
+  def handle_info({:update, new_assigns}, socket) do
+    merged = Map.merge(socket.assigns.comp_assigns, new_assigns)
+    {:noreply, assign(socket, :comp_assigns, merged)}
+  end
+
+  def handle_info(msg, socket) do
+    send(socket.assigns.test_pid, msg)
+    {:noreply, socket}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <div id="component-host">
+      <.live_component module={@comp_module} {@comp_assigns} />
+    </div>
+    """
+  end
 end

@@ -21,7 +21,7 @@ defmodule PhoenixKitDocumentCreator.Web.Components.VariableConfigForm do
         </label>
         <input
           type="number"
-          name={"config[#{@variable.name}][default_width_px]"}
+          name={"variables[#{@variable.name}][config][default_width_px]"}
           class="input input-bordered input-sm w-full"
           value={@variable.config[:default_width_px] || @variable.config["default_width_px"]}
           min="1"
@@ -45,7 +45,7 @@ defmodule PhoenixKitDocumentCreator.Web.Components.VariableConfigForm do
         </label>
         <input
           type="number"
-          name={"config[#{@variable.name}][default_width_px]"}
+          name={"variables[#{@variable.name}][config][default_width_px]"}
           class="input input-bordered input-sm w-full"
           value={@variable.config[:default_width_px] || @variable.config["default_width_px"]}
           min="1"
@@ -57,8 +57,9 @@ defmodule PhoenixKitDocumentCreator.Web.Components.VariableConfigForm do
           <span class="label-text text-sm">{gettext("Separator")}</span>
         </label>
         <select
-          name={"config[#{@variable.name}][separator]"}
+          name={"variables[#{@variable.name}][config][separator]"}
           class="select select-bordered select-sm w-full"
+          phx-debounce="500"
         >
           <option value="newline" selected={@current_separator == "newline"}>{gettext("New line")}</option>
           <option value="space" selected={@current_separator == "space"}>{gettext("Space")}</option>
@@ -71,7 +72,7 @@ defmodule PhoenixKitDocumentCreator.Web.Components.VariableConfigForm do
         </label>
         <input
           type="number"
-          name={"config[#{@variable.name}][max_count]"}
+          name={"variables[#{@variable.name}][config][max_count]"}
           class="input input-bordered input-sm w-full"
           value={@variable.config[:max_count] || @variable.config["max_count"]}
           min="1"

@@ -4,6 +4,9 @@ defmodule PhoenixKitDocumentCreator.Variable do
 
   Variables are `{{ variable_name }}` placeholders in Google Docs templates that
   get substituted with actual values via the Google Docs `replaceAllText` API.
+
+  `default_image_config/1` returns the default render config for image variables,
+  including `opacity` and `z_index` fields introduced in the composition pipeline.
   """
 
   @type variable_type :: :text | :date | :currency | :multiline | :image | :image_list
@@ -143,8 +146,19 @@ defmodule PhoenixKitDocumentCreator.Variable do
   defp keyword_to_kind("image"), do: :image
   defp keyword_to_kind("images"), do: :image_list
 
-  defp default_image_config(:image), do: %{default_width_px: 400}
+  @doc """
+  Returns the default render config for an image variable.
 
-  defp default_image_config(:image_list),
-    do: %{default_width_px: 400, separator: :newline, max_count: nil}
+  For `:image`: `%{default_width_px: 400, opacity: 1.0, z_index: 0}`
+  For `:image_list`: adds `separator: :newline, max_count: nil`.
+
+  Note: `:opacity` is currently a no-op in the inline path; positioned objects
+  (`z_index > 0`) also skip it pending a follow-up two-pass batchUpdate.
+  Values stored in the DB are preserved for future activation.
+  """
+  @spec default_image_config(:image | :image_list) :: map()
+  def default_image_config(:image), do: %{default_width_px: 400, opacity: 1.0, z_index: 0}
+
+  def default_image_config(:image_list),
+    do: %{default_width_px: 400, opacity: 1.0, z_index: 0, separator: :newline, max_count: nil}
 end
