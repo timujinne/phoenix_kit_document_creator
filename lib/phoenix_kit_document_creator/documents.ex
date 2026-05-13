@@ -1729,7 +1729,14 @@ defmodule PhoenixKitDocumentCreator.Documents do
           keyword()
         ) :: {:ok, Document.t()} | {:error, term()}
   def create_composed_document(sections, opts) do
-    Composer.compose(sections, opts)
+    case Composer.compose(sections, opts) do
+      {:ok, _doc} = ok ->
+        broadcast_files_changed()
+        ok
+
+      {:error, _} = err ->
+        err
+    end
   end
 
   @doc """

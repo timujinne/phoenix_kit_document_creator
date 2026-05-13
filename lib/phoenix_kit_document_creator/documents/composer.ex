@@ -69,16 +69,21 @@ defmodule PhoenixKitDocumentCreator.Documents.Composer do
     name = Keyword.fetch!(opts, :name)
 
     # Section separator is configurable per spec; MVP only honours :page_break.
-    # Future values (:none, :blank_line) are accepted at the API surface once
-    # implemented. Anything else raises ArgumentError so callers can't silently
-    # pass an unsupported value.
+    # Future values (:none, :blank_line) will be accepted once implemented.
+    # Anything else returns {:error, {:unsupported_separator, _}} so callers
+    # get one uniform tagged-tuple error surface — raising would crash the
+    # LiveView caller, which is typed {:ok, _} | {:error, _}.
     separator = Keyword.get(opts, :separator, :page_break)
 
-    unless separator == :page_break do
-      raise ArgumentError,
-            "unsupported separator #{inspect(separator)}; MVP supports only :page_break"
+    with :ok <- validate_separator(separator) do
+      do_compose(sections, opts, created_by, name)
     end
+  end
 
+  defp validate_separator(:page_break), do: :ok
+  defp validate_separator(other), do: {:error, {:unsupported_separator, other}}
+
+  defp do_compose(sections, _opts, created_by, name) do
     repo = PhoenixKit.RepoHelper.repo()
 
     templates =
