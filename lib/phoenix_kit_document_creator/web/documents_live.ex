@@ -404,27 +404,6 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
     end
   end
 
-  defp do_set_template_category(socket, file_id, category) do
-    result = Documents.update_template_category(file_id, category, actor_opts(socket))
-    apply_category_update(socket, file_id, result)
-  end
-
-  defp apply_category_update(socket, file_id, {:ok, updated}) do
-    templates = patch_template_category(socket.assigns.templates, file_id, updated.category)
-    {:noreply, assign(socket, templates: templates)}
-  end
-
-  defp apply_category_update(socket, file_id, {:error, reason}) do
-    Logger.error("Failed to set template category for #{file_id}: #{inspect(reason)}")
-    {:noreply, assign(socket, error: gettext("Failed to update template category."))}
-  end
-
-  defp patch_template_category(templates, file_id, new_category) do
-    Enum.map(templates, fn t ->
-      if t["id"] == file_id, do: Map.put(t, "category", new_category), else: t
-    end)
-  end
-
   def handle_event("new_blank_document", _params, socket) do
     case Documents.create_document(gettext("Untitled Document"), actor_opts(socket)) do
       {:ok, %{url: url}} ->
@@ -1606,6 +1585,27 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
   defp patch_template_language(templates, file_id, new_language) do
     Enum.map(templates, fn t ->
       if t["id"] == file_id, do: Map.put(t, "language", new_language), else: t
+    end)
+  end
+
+  defp do_set_template_category(socket, file_id, category) do
+    result = Documents.update_template_category(file_id, category, actor_opts(socket))
+    apply_category_update(socket, file_id, result)
+  end
+
+  defp apply_category_update(socket, file_id, {:ok, updated}) do
+    templates = patch_template_category(socket.assigns.templates, file_id, updated.category)
+    {:noreply, assign(socket, templates: templates)}
+  end
+
+  defp apply_category_update(socket, file_id, {:error, reason}) do
+    Logger.error("Failed to set template category for #{file_id}: #{inspect(reason)}")
+    {:noreply, assign(socket, error: gettext("Failed to update template category."))}
+  end
+
+  defp patch_template_category(templates, file_id, new_category) do
+    Enum.map(templates, fn t ->
+      if t["id"] == file_id, do: Map.put(t, "category", new_category), else: t
     end)
   end
 
