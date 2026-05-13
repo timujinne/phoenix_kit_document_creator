@@ -92,6 +92,24 @@ defmodule PhoenixKitDocumentCreator.VariableTest do
     end
   end
 
+  describe "default_image_config/1" do
+    test "includes opacity and z_index for :image" do
+      cfg = PhoenixKitDocumentCreator.Variable.default_image_config(:image)
+      assert cfg.opacity == 1.0
+      assert cfg.z_index == 0
+      assert cfg.default_width_px == 400
+    end
+
+    test "includes opacity and z_index for :image_list" do
+      cfg = PhoenixKitDocumentCreator.Variable.default_image_config(:image_list)
+      assert cfg.opacity == 1.0
+      assert cfg.z_index == 0
+      assert cfg.default_width_px == 400
+      assert cfg.separator == :newline
+      assert cfg.max_count == nil
+    end
+  end
+
   describe "build_definitions/1" do
     test "builds text variables with empty config" do
       fork = %{text: ["client_name"], image: []}
@@ -113,7 +131,7 @@ defmodule PhoenixKitDocumentCreator.VariableTest do
                  name: "logo",
                  label: "Logo",
                  type: :image,
-                 config: %{default_width_px: 400}
+                 config: %{default_width_px: 400, opacity: 1.0, z_index: 0}
                }
              ] = PhoenixKitDocumentCreator.Variable.build_definitions(fork)
     end
@@ -125,7 +143,13 @@ defmodule PhoenixKitDocumentCreator.VariableTest do
                %PhoenixKitDocumentCreator.Variable{
                  name: "photos",
                  type: :image_list,
-                 config: %{default_width_px: 400, separator: :newline, max_count: nil}
+                 config: %{
+                   default_width_px: 400,
+                   opacity: 1.0,
+                   z_index: 0,
+                   separator: :newline,
+                   max_count: nil
+                 }
                }
              ] = PhoenixKitDocumentCreator.Variable.build_definitions(fork)
     end
