@@ -1132,6 +1132,50 @@ defmodule PhoenixKitDocumentCreator.Documents do
     end
   end
 
+  @spec update_template_category(String.t(), String.t() | nil, keyword()) ::
+          {:ok, Template.t()} | {:error, :not_found | Ecto.Changeset.t()}
+  def update_template_category(google_doc_id, category, opts \\ [])
+      when is_binary(google_doc_id) do
+    normalized =
+      case category do
+        nil -> nil
+        "" -> nil
+        value when is_binary(value) -> value
+      end
+
+    case repo().get_by(Template, google_doc_id: google_doc_id) do
+      nil ->
+        {:error, :not_found}
+
+      %Template{category: previous} = template ->
+        template
+        |> Template.changeset(%{category: normalized})
+        |> repo().update()
+        |> case do
+          {:ok, updated} ->
+            log_activity(%{
+              action: "template.category_updated",
+              mode: "manual",
+              actor_uuid: opts[:actor_uuid],
+              resource_type: "template",
+              resource_uuid: updated.uuid,
+              metadata: %{
+                "name" => updated.name,
+                "google_doc_id" => updated.google_doc_id,
+                "category_from" => previous,
+                "category_to" => updated.category
+              }
+            })
+
+            broadcast_files_changed()
+            {:ok, updated}
+
+          {:error, _changeset} = err ->
+            err
+        end
+    end
+  end
+
   defp register_existing(kind, attrs, opts) do
     with {:ok, a} <- normalize_register_attrs(attrs),
          file = %{"id" => a.google_doc_id, "name" => a.name},

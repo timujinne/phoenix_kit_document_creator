@@ -391,6 +391,40 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
     end
   end
 
+  def handle_event("set_template_category", %{"id" => file_id} = params, socket) do
+    category =
+      case Map.get(params, "category", "") do
+        "" -> nil
+        value -> value
+      end
+
+    case verify_known_file(socket, file_id) do
+      :ok -> do_set_template_category(socket, file_id, category)
+      _ -> {:noreply, socket}
+    end
+  end
+
+  defp do_set_template_category(socket, file_id, category) do
+    result = Documents.update_template_category(file_id, category, actor_opts(socket))
+    apply_category_update(socket, file_id, result)
+  end
+
+  defp apply_category_update(socket, file_id, {:ok, updated}) do
+    templates = patch_template_category(socket.assigns.templates, file_id, updated.category)
+    {:noreply, assign(socket, templates: templates)}
+  end
+
+  defp apply_category_update(socket, file_id, {:error, reason}) do
+    Logger.error("Failed to set template category for #{file_id}: #{inspect(reason)}")
+    {:noreply, assign(socket, error: gettext("Failed to update template category."))}
+  end
+
+  defp patch_template_category(templates, file_id, new_category) do
+    Enum.map(templates, fn t ->
+      if t["id"] == file_id, do: Map.put(t, "category", new_category), else: t
+    end)
+  end
+
   def handle_event("new_blank_document", _params, socket) do
     case Documents.create_document(gettext("Untitled Document"), actor_opts(socket)) do
       {:ok, %{url: url}} ->
@@ -1194,12 +1228,19 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
                 {gettext("unfiled")}
               </button>
             </div>
-            {render_language_picker(%{
-              file: file,
-              is_template: @is_template,
-              enabled_languages: @enabled_languages,
-              status_mode: @status_mode
-            })}
+            <div class="flex flex-wrap gap-1">
+              {render_language_picker(%{
+                file: file,
+                is_template: @is_template,
+                enabled_languages: @enabled_languages,
+                status_mode: @status_mode
+              })}
+              {render_category_picker(%{
+                file: file,
+                is_template: @is_template,
+                status_mode: @status_mode
+              })}
+            </div>
             <p :if={file["modifiedTime"]} class="text-xs text-base-content/40 mt-auto pt-2">
               {format_time(file["modifiedTime"])}
             </p>
@@ -1287,6 +1328,11 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
                     file: file,
                     is_template: @is_template,
                     enabled_languages: @enabled_languages,
+                    status_mode: @status_mode
+                  })}
+                  {render_category_picker(%{
+                    file: file,
+                    is_template: @is_template,
                     status_mode: @status_mode
                   })}
                 </div>
@@ -1450,6 +1496,58 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
         >
           <span class="hero-x-mark w-3.5 h-3.5" /> {gettext("Clear language")}
         </button>
+      </div>
+    </div>
+    """
+  end
+
+  defp category_options do
+    [
+      {"", gettext("No category")},
+      {"financial", gettext("Financial")},
+      {"technical", gettext("Technical")}
+    ]
+  end
+
+  defp render_category_picker(assigns) do
+    assigns = assign(assigns, :category_options, category_options())
+
+    ~H"""
+    <div :if={@is_template and @status_mode != "trashed"} class="relative inline-flex">
+      <button
+        type="button"
+        popovertarget={"cat-pop-" <> @file["id"]}
+        style={"anchor-name: --cat-trigger-#{@file["id"]}"}
+        class={"badge badge-xs cursor-pointer #{if @file["category"], do: "badge-secondary", else: "badge-outline border-dashed"}"}
+        title={gettext("Template category")}
+      >
+        <span :if={@file["category"]}>{@file["category"]}</span>
+        <span :if={!@file["category"]}>{gettext("Set category")}</span>
+        <span class="hero-chevron-down w-2.5 h-2.5" />
+      </button>
+      <div
+        id={"cat-pop-" <> @file["id"]}
+        popover="auto"
+        style={
+          "position-anchor: --cat-trigger-#{@file["id"]}; " <>
+          "position-area: bottom span-right; " <>
+          "margin: 4px 0 0 0; inset: auto;"
+        }
+        class="bg-base-100 rounded-box w-48 p-1 shadow-lg border border-base-300 [&:not(:popover-open)]:hidden"
+      >
+        <%= for {value, label} <- @category_options do %>
+          <button
+            type="button"
+            popovertarget={"cat-pop-" <> @file["id"]}
+            popovertargetaction="hide"
+            phx-click="set_template_category"
+            phx-value-id={@file["id"]}
+            phx-value-category={value}
+            class={"w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-sm hover:bg-base-200 #{if @file["category"] == value or (value == "" and is_nil(@file["category"])), do: "bg-primary/10 text-primary", else: ""}"}
+          >
+            {label}
+          </button>
+        <% end %>
       </div>
     </div>
     """
