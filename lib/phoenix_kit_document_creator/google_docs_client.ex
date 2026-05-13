@@ -1125,6 +1125,164 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
     end
   end
 
+  # ===========================================================================
+  # Composition helpers (used by Documents.Composer)
+  # ===========================================================================
+
+  @doc """
+  Copy a Google Doc for use as the base of a composed document.
+
+  Returns `{:ok, new_doc_id}`. The copy is named by its source doc ID so it
+  can be identified for best-effort cleanup on rollback before a final name
+  is applied.
+  """
+  @spec copy_document(String.t()) :: {:ok, String.t()} | {:error, term()}
+  def copy_document(source_doc_id) do
+    copy_file(source_doc_id, "composed-doc-#{source_doc_id}")
+  end
+
+  @doc """
+  Append a template's content to an existing Google Doc via batchUpdate.
+
+  Inserts a page break followed by the full text content of `template_doc_id`
+  into `target_doc_id`. Returns `{:ok, {start_index, end_index}}` representing
+  the character range of the inserted content — callers use this for
+  section-scoped substitution.
+  """
+  @spec append_template(String.t(), String.t()) ::
+          {:ok, {integer(), integer()}} | {:error, term()}
+  def append_template(target_doc_id, template_doc_id) do
+    with {:ok, text} <- get_document_text(template_doc_id),
+         {:ok, %{body: current_doc}} <- get_document(target_doc_id) do
+      end_index = document_end_index(current_doc)
+      insert_index = max(end_index - 1, 1)
+
+      requests = [
+        %{insertPageBreak: %{location: %{index: insert_index}}},
+        %{
+          insertText: %{
+            location: %{index: insert_index + 1},
+            text: text
+          }
+        }
+      ]
+
+      case batch_update(target_doc_id, requests) do
+        {:ok, _} ->
+          content_start = insert_index + 1
+          content_end = content_start + String.length(text)
+          {:ok, {content_start, content_end}}
+
+        {:error, _} = err ->
+          err
+      end
+    end
+  end
+
+  @doc """
+  Perform text and image substitution within a specific character range of a doc.
+
+  `range` is either `{start_index, end_index}` (for a section-scoped substitution)
+  or `:full_document` (substitutes across the entire document — used for the first
+  section which occupies the whole doc before any append).
+
+  Text substitution runs before image substitution per production pipeline ordering
+  (text-sub must complete before image tags are resolved to avoid tag collisions).
+  """
+  @spec substitute_in_range(
+          String.t(),
+          {integer(), integer()} | :full_document,
+          map(),
+          map(),
+          map()
+        ) :: :ok | {:error, term()}
+  def substitute_in_range(doc_id, _range, variable_values, image_params, _default_image_cfg) do
+    # MVP: range-scoped substitution is approximated by full-document replace_all_text +
+    # substitute_images. True range-scoped substitution (restricting replaceAllText to
+    # a segment) is not supported by the Google Docs batchUpdate API — replaceAllText
+    # always applies to the whole document. Section ordering and unique variable keys
+    # per section are the caller's responsibility to avoid cross-section collisions.
+    text_values = Map.reject(variable_values, fn {_, v} -> is_map(v) end)
+    image_fills = build_image_fills(image_params)
+
+    with {:ok, _} <- replace_all_text(doc_id, text_values),
+         {:ok, _} <- substitute_images(doc_id, image_fills) do
+      :ok
+    end
+  end
+
+  @doc """
+  Delete (trash) a Google Doc. Used for best-effort cleanup after a failed composition.
+  Returns `:ok` or `{:error, reason}`.
+  """
+  @spec delete_document(String.t()) :: :ok | {:error, term()}
+  def delete_document(doc_id) do
+    with {:ok, fid} <- validate_file_id(doc_id) do
+      case authenticated_request(:delete, "#{@drive_base}/files/#{fid}") do
+        {:ok, %{status: status}} when status in 200..299 ->
+          :ok
+
+        {:ok, %{status: 204}} ->
+          :ok
+
+        {:ok, %{body: body}} ->
+          log_drive_error("delete failed", body)
+          {:error, :delete_failed}
+
+        {:error, _} = err ->
+          err
+      end
+    end
+  end
+
+  defp document_end_index(doc) do
+    content = get_in(doc, ["body", "content"]) || []
+
+    content
+    |> Enum.flat_map(fn el ->
+      case el do
+        %{"paragraph" => %{"elements" => elements}} ->
+          Enum.map(elements, &Map.get(&1, "endIndex", 0))
+
+        _ ->
+          [Map.get(el, "endIndex", 0)]
+      end
+    end)
+    |> Enum.max(fn -> 1 end)
+  end
+
+  defp build_image_fills(image_params) when map_size(image_params) == 0, do: %{}
+
+  defp build_image_fills(image_params) do
+    Map.new(image_params, fn {name, params} ->
+      kind = if Map.get(params, "kind") == "image_list", do: :image_list, else: :image
+      media_items = build_media_items(params)
+
+      fill = %{
+        kind: kind,
+        default_width_px: Map.get(params, "width_px", 400),
+        separator: normalize_separator_atom(Map.get(params, "separator", "newline")),
+        media: media_items
+      }
+
+      {name, fill}
+    end)
+  end
+
+  defp build_media_items(%{"media" => media}) when is_list(media) do
+    Enum.map(media, fn m ->
+      %{uri: Map.get(m, "uri", ""), width_px: Map.get(m, "width_px"), height_px: nil}
+    end)
+  end
+
+  defp build_media_items(_), do: []
+
+  defp normalize_separator_atom("newline"), do: :newline
+  defp normalize_separator_atom("space"), do: :space
+  defp normalize_separator_atom(:newline), do: :newline
+  defp normalize_separator_atom(:space), do: :space
+  defp normalize_separator_atom(_), do: :none
+
   @doc "Get the edit URL for a Google Doc."
   @spec get_edit_url(term()) :: String.t() | nil
   def get_edit_url(doc_id) when is_binary(doc_id) and doc_id != "" do

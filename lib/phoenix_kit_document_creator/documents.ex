@@ -24,6 +24,7 @@ defmodule PhoenixKitDocumentCreator.Documents do
   require Logger
 
   alias PhoenixKit.Modules.Languages
+  alias PhoenixKitDocumentCreator.Documents.Composer
   alias PhoenixKitDocumentCreator.GoogleDocsClient
   alias PhoenixKitDocumentCreator.GoogleDocsClient.DriveWalker
   alias PhoenixKitDocumentCreator.Schemas.Document
@@ -1645,6 +1646,23 @@ defmodule PhoenixKitDocumentCreator.Documents do
   # ===========================================================================
   # Variables
   # ===========================================================================
+
+  # ===========================================================================
+  # Composition
+  # ===========================================================================
+
+  @doc """
+  Compose N template sections into a single Google Doc, persisting the recipe.
+
+  Required opts: `:created_by_uuid`, `:name`. Optional: `:separator` (default `:page_break`).
+  """
+  @spec create_composed_document(
+          [Composer.section_input()],
+          keyword()
+        ) :: {:ok, Document.t()} | {:error, term()}
+  def create_composed_document(sections, opts) do
+    Composer.compose(sections, opts)
+  end
 
   @doc """
   Returns the image variable slots defined in a template's Google Doc.
