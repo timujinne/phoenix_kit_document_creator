@@ -109,10 +109,16 @@ defmodule PhoenixKitDocumentCreator.Documents.Composer do
     |> Multi.run(:google_doc, fn _, _ ->
       client.copy_document(first_template.google_doc_id)
     end)
+    |> Multi.run(:base_range, fn _, %{google_doc: gdoc_id} ->
+      # Capture section 0's range before any appends — indices shift after each append.
+      client.document_content_range(gdoc_id)
+    end)
     |> Multi.run(:appended, fn _, %{google_doc: gdoc_id} ->
       append_sections(gdoc_id, rest, by_uuid, client)
     end)
-    |> Multi.run(:substituted, fn _, %{google_doc: gdoc_id, appended: ranges} ->
+    |> Multi.run(:substituted, fn _,
+                                  %{google_doc: gdoc_id, base_range: base, appended: appended} ->
+      ranges = Map.put(appended, first.position, base)
       apply_substitutions(gdoc_id, sorted_sections, ranges, client)
     end)
     |> Multi.insert(:document, fn %{google_doc: gdoc_id} ->
@@ -174,30 +180,15 @@ defmodule PhoenixKitDocumentCreator.Documents.Composer do
     end)
   end
 
-  # Each section is substituted against its own character range in the composed doc.
-  # Section 0 (the base copy) uses :full_document since it occupies the whole doc
-  # before any sections are appended. Sections 1..N use the {start, end} range
-  # returned by append_template/2. This means identical placeholder keys in
-  # different sections (e.g. {{name}}: "Alice" in s0, {{name}}: "Bob" in s1)
-  # resolve independently — each substitution only touches its section's range.
+  # All sections are substituted in a single pass: one documents.get fetch,
+  # all {{key}} matches resolved against whichever section's range contains them,
+  # then one batchUpdate in reverse-index order. This avoids the index-drift bug
+  # that would occur if sections were substituted sequentially (each substitution
+  # changes doc length, invalidating stored ranges for subsequent sections).
   defp apply_substitutions(gdoc_id, sorted, ranges, client) do
-    Enum.reduce_while(sorted, :ok, fn section, _ ->
-      range = Map.get(ranges, section.position, :full_document)
-
-      case client.substitute_in_range(
-             gdoc_id,
-             range,
-             section.variable_values,
-             section.image_params,
-             %{}
-           ) do
-        :ok -> {:cont, :ok}
-        {:error, _} = e -> {:halt, e}
-      end
-    end)
-    |> case do
+    case client.substitute_all_sections(gdoc_id, sorted, ranges) do
       :ok -> {:ok, :substituted}
-      other -> other
+      {:error, _} = err -> err
     end
   end
 

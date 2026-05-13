@@ -79,12 +79,13 @@ defmodule PhoenixKitDocumentCreator.Documents.ComposedDocumentTest do
       assert t1uuid == t1.uuid
       assert t2uuid == t2.uuid
 
-      # copy_document + append_template (section 2) + substitute_in_range per section.
+      # copy_document → document_content_range (section 0 range) → append_template
+      # (section 1) → substitute_all_sections (single atomic pass for all sections).
       assert_google_docs_calls_in_order([
         :copy_document,
+        :document_content_range,
         :append_template,
-        :substitute_in_range,
-        :substitute_in_range
+        :substitute_all_sections
       ])
     end
 
@@ -127,7 +128,8 @@ defmodule PhoenixKitDocumentCreator.Documents.ComposedDocumentTest do
 
       assert_google_docs_calls_in_order([
         :copy_document,
-        :substitute_in_range
+        :document_content_range,
+        :substitute_all_sections
       ])
     end
   end

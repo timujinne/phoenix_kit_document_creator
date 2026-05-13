@@ -83,12 +83,16 @@ defmodule PhoenixKitDocumentCreator.Test.StubDocsClient do
     end
   end
 
-  def substitute_in_range(doc_id, range, _variable_values, _image_params, _default_config) do
-    record(:substitute_in_range)
-    key = {:substitute_in_range, doc_id}
-    range_key = {:substitute_in_range, range}
+  def document_content_range(_doc_id) do
+    record(:document_content_range)
+    {:ok, {1, 99}}
+  end
 
-    case override_for(range_key) || override_for(key) || override_for(:substitute_in_range) do
+  def substitute_all_sections(doc_id, _sections, _ranges) do
+    record(:substitute_all_sections)
+
+    case override_for({:substitute_all_sections, doc_id}) ||
+           override_for(:substitute_all_sections) do
       nil -> :ok
       :ok -> :ok
       {:error, _} = err -> err
@@ -166,9 +170,9 @@ defmodule PhoenixKitDocumentCreator.Test.StubDocsClientHelpers do
     )
   end
 
-  @doc "Stub substitute_in_range to return an error for any call."
+  @doc "Stub substitute_all_sections to return an error."
   def stub_substitute_in_range_error!(_range_key, error) do
-    StubDocsClient.add_override(:substitute_in_range, {:error, error})
+    StubDocsClient.add_override(:substitute_all_sections, {:error, error})
   end
 
   @doc "Stub delete_document to return an error."
