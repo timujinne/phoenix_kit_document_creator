@@ -1489,8 +1489,6 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
   end
 
   defp render_category_picker(assigns) do
-    assigns = assign(assigns, :category_options, category_options())
-
     ~H"""
     <div :if={@is_template and @status_mode != "trashed"} class="relative inline-flex">
       <button
@@ -1514,7 +1512,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
         }
         class="bg-base-100 rounded-box w-48 p-1 shadow-lg border border-base-300 [&:not(:popover-open)]:hidden"
       >
-        <%= for {value, label} <- @category_options do %>
+        <%= for {value, label} <- category_options() do %>
           <button
             type="button"
             popovertarget={"cat-pop-" <> @file["id"]}
