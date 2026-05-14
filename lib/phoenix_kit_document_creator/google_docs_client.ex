@@ -933,7 +933,7 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   def build_single_image_request(uri, opts) do
     index = Keyword.fetch!(opts, :insertion_index)
     config = Keyword.fetch!(opts, :config)
-    w = Map.get(config, :default_width_px, 400)
+    w = Map.get(config, :default_width_px) || 400
     media = %{uri: uri, width_px: nil, height_px: nil}
     image_request(media, w, index, config, uri)
   end
@@ -969,8 +969,8 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   # options are accepted in `config` for forward-compat and ignored with a
   # warning when set away from the defaults.
   defp image_request(media, width, index, config, log_ctx) do
-    z = Map.get(config, :z_index, 0)
-    opacity = Map.get(config, :opacity, 1.0)
+    z = Map.get(config, :z_index) || 0
+    opacity = Map.get(config, :opacity) || 1.0
 
     if z > 0 do
       Logger.warning(
@@ -1002,8 +1002,8 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
         location: %{index: index},
         uri: uri,
         objectSize: %{
-          width: %{magnitude: default_width_px * @px_to_pt, unit: "PT"},
-          height: %{magnitude: scaled_height_px * @px_to_pt, unit: "PT"}
+          width: %{magnitude: (default_width_px || 400) * @px_to_pt, unit: "PT"},
+          height: %{magnitude: (scaled_height_px || default_width_px || 400) * @px_to_pt, unit: "PT"}
         }
       }
     }
@@ -1477,7 +1477,7 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
     |> Enum.filter(&match?(%{"textRun" => _, "startIndex" => _}, &1))
   end
 
-  @text_var_regex ~r/\{\{\s*(\w+)\s*\}\}/
+  @text_var_regex ~r/\{\{\s*([\p{L}\p{N}_]+)\s*\}\}/u
 
   # Find {{key}} occurrences in a textRun element for the given key names.
   # Returns %{key, start_index, end_index} with UTF-16 index arithmetic.
@@ -1550,10 +1550,10 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
 
       fill = %{
         kind: kind,
-        default_width_px: Map.get(params, "width_px", 400),
-        opacity: Map.get(params, "opacity", 1.0),
-        z_index: Map.get(params, "z_index", 0),
-        separator: normalize_separator_atom(Map.get(params, "separator", "newline")),
+        default_width_px: Map.get(params, "width_px") || 400,
+        opacity: Map.get(params, "opacity") || 1.0,
+        z_index: Map.get(params, "z_index") || 0,
+        separator: normalize_separator_atom(Map.get(params, "separator") || "newline"),
         media: media_items
       }
 
