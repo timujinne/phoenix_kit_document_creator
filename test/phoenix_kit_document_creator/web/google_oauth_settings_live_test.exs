@@ -393,5 +393,23 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
       html = render(view)
       refute html =~ "grant access"
     end
+
+    test "save_folders with non-empty root_name does not crash", %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
+
+      render_change(view, "save_folders", %{
+        "root_path" => "",
+        "root_name" => "my-project",
+        "templates_path" => "",
+        "templates_name" => "templates",
+        "documents_path" => "",
+        "documents_name" => "documents",
+        "deleted_path" => "",
+        "deleted_name" => "deleted"
+      })
+
+      assert :sys.get_state(view.pid).socket.assigns.success =~ "saved"
+    end
   end
 end

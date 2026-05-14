@@ -198,6 +198,15 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
     new_root_name = new["folder_name_root"]
     root_changed = changed and new_root_name != "" and new_root_name != old_root_name
 
+    if changed and new_root_name != "" do
+      root_abs =
+        if new["folder_path_root"] != "",
+          do: "#{new["folder_path_root"]}/#{new_root_name}",
+          else: new_root_name
+
+      Task.start(fn -> GoogleDocsClient.ensure_folder_path(root_abs) end)
+    end
+
     folder_data_after = Settings.get_json_setting(GoogleDocsClient.folder_settings_key(), %{})
 
     has_cached_ids =
