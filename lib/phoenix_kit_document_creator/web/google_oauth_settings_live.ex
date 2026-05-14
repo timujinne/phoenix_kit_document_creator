@@ -43,12 +43,15 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
        active_connection: nil,
        google_connections: [],
        # Folder config — populated by `:load_settings`
+       root_path: nil,
+       root_name: nil,
        templates_path: nil,
        templates_name: nil,
        documents_path: nil,
        documents_name: nil,
        deleted_path: nil,
        deleted_name: nil,
+       migration_needed: false,
        # Folder browser modal
        browser_open: false,
        browser_field: nil,
@@ -91,6 +94,8 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
       connected_email: connection_info.email,
       active_connection: active_uuid,
       google_connections: google_connections,
+      root_path: fc.root_path,
+      root_name: fc.root_name,
       templates_path: fc.templates_path,
       templates_name: fc.templates_name,
       documents_path: fc.documents_path,
@@ -148,12 +153,14 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
     folder_data = Settings.get_json_setting(GoogleDocsClient.folder_settings_key(), %{})
 
     new = %{
+      "folder_path_root"      => String.trim(params["root_path"] || ""),
+      "folder_name_root"      => String.trim(params["root_name"] || ""),
       "folder_path_templates" => String.trim(params["templates_path"] || ""),
       "folder_name_templates" => String.trim(params["templates_name"] || ""),
       "folder_path_documents" => String.trim(params["documents_path"] || ""),
       "folder_name_documents" => String.trim(params["documents_name"] || ""),
-      "folder_path_deleted" => String.trim(params["deleted_path"] || ""),
-      "folder_name_deleted" => String.trim(params["deleted_name"] || "")
+      "folder_path_deleted"   => String.trim(params["deleted_path"] || ""),
+      "folder_name_deleted"   => String.trim(params["deleted_name"] || "")
     }
 
     old_keys = Map.take(folder_data, Map.keys(new))
@@ -187,20 +194,79 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
       ])
     end
 
+    old_root_name = socket.assigns.root_name || ""
+    new_root_name = new["folder_name_root"]
+    root_changed = changed and new_root_name != "" and new_root_name != old_root_name
+
+    folder_data_after = Settings.get_json_setting(GoogleDocsClient.folder_settings_key(), %{})
+
+    has_cached_ids =
+      Enum.any?(
+        ~w(templates_folder_id documents_folder_id deleted_templates_folder_id deleted_documents_folder_id),
+        &(is_binary(folder_data_after[&1]) and folder_data_after[&1] != "")
+      )
+
     {:noreply,
      assign(socket,
+       root_path: new["folder_path_root"],
+       root_name: new["folder_name_root"],
        templates_path: new["folder_path_templates"],
        templates_name: new["folder_name_templates"],
        documents_path: new["folder_path_documents"],
        documents_name: new["folder_name_documents"],
        deleted_path: new["folder_path_deleted"],
        deleted_name: new["folder_name_deleted"],
+       migration_needed: root_changed and has_cached_ids,
        success: gettext("Folder settings saved"),
        error: nil
      )}
   end
 
-  @valid_path_fields ~w(templates_path documents_path deleted_path)
+  def handle_event("skip_migration", _params, socket) do
+    {:noreply, assign(socket, migration_needed: false)}
+  end
+
+  def handle_event("migrate_folders", _params, socket) do
+    root_name = socket.assigns.root_name
+    root_path = socket.assigns.root_path || ""
+    root_abs = if root_path != "", do: "#{root_path}/#{root_name}", else: root_name
+
+    case GoogleDocsClient.ensure_folder_path(root_abs) do
+      {:ok, root_folder_id} ->
+        case GoogleDocsClient.migrate_folders_to_root(root_folder_id) do
+          {:ok, %{moved: moved}} ->
+            Documents.log_manual_action("settings.folders_migrated", [
+              {:actor_uuid, actor_uuid(socket)},
+              {:metadata, %{"root_name" => root_name, "moved" => moved}}
+            ])
+
+            {:noreply,
+             assign(socket,
+               migration_needed: false,
+               success: gettext("Folders moved to \"%{name}\"", name: root_name),
+               error: nil
+             )}
+
+          {:error, failures} ->
+            labels = Enum.map_join(failures, ", ", fn {label, _} -> label end)
+
+            {:noreply,
+             assign(socket,
+               error: gettext("Migration failed for: %{folders}", folders: labels),
+               success: nil
+             )}
+        end
+
+      {:error, _reason} ->
+        {:noreply,
+         assign(socket,
+           error: gettext("Could not create root folder \"%{name}\"", name: root_name),
+           success: nil
+         )}
+    end
+  end
+
+  @valid_path_fields ~w(root_path templates_path documents_path deleted_path)
 
   def handle_event("browse_folder", %{"field" => field}, socket)
       when field in @valid_path_fields do
@@ -338,6 +404,25 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
         <span>{@error}</span>
       </div>
 
+      <%!-- Migration banner --%>
+      <div :if={@migration_needed} class="alert alert-warning">
+        <span class="hero-exclamation-triangle w-5 h-5" />
+        <div>
+          <p class="font-semibold">{gettext("Existing folders found at their current location.")}</p>
+          <p class="text-sm">{gettext("Move templates, documents, and deleted into \"%{name}\"?", name: @root_name)}</p>
+        </div>
+        <div class="flex gap-2 ml-auto">
+          <button class="btn btn-ghost btn-sm" phx-click="skip_migration">{gettext("Skip")}</button>
+          <button
+            class="btn btn-warning btn-sm"
+            phx-click="migrate_folders"
+            phx-disable-with={gettext("Moving…")}
+          >
+            {gettext("Move folders")}
+          </button>
+        </div>
+      </div>
+
       <%!-- Google Connection --%>
       <div class="card bg-base-100 shadow-sm">
         <div class="card-body">
@@ -369,6 +454,37 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
           </p>
 
           <form phx-submit="save_folders" class="space-y-4 mt-4">
+            <div class="form-control">
+              <label class="label"><span class="label-text">{gettext("Root folder")}</span></label>
+              <div class="flex items-center gap-0">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm font-mono text-sm border border-base-300 rounded-r-none px-2 h-12 max-w-[60%] overflow-hidden"
+                  phx-click="browse_folder"
+                  phx-disable-with={gettext("Loading…")}
+                  phx-value-field="root_path"
+                  title={if @root_path == "", do: gettext("Browse Google Drive — root"), else: gettext("Browse Google Drive — %{path}", path: @root_path)}
+                >
+                  <span class="hero-folder-open w-4 h-4 shrink-0" />
+                  <span class="truncate">{if @root_path == "", do: "/", else: "#{@root_path}/"}</span>
+                </button>
+                <input
+                  type="text"
+                  name="root_name"
+                  value={@root_name}
+                  class="input input-bordered rounded-l-none flex-1 min-w-0 font-mono text-sm"
+                  style="min-width: 120px;"
+                  placeholder={PhoenixKit.Settings.get_project_title()}
+                />
+                <input type="hidden" name="root_path" value={@root_path} />
+              </div>
+              <p class="text-xs text-base-content/50 mt-1">
+                {gettext("All folders will be created inside this directory.")}
+              </p>
+            </div>
+
+            <div class="divider my-1" />
+
             <div class="form-control">
               <label class="label"><span class="label-text">{gettext("Templates")}</span></label>
               <div class="flex items-center gap-0">
@@ -456,6 +572,17 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
               {gettext("Save Folder Settings")}
             </button>
           </form>
+
+          <div :if={@root_name && @root_name != ""} class="alert alert-info mt-4">
+            <span class="hero-information-circle w-5 h-5" />
+            <span>
+              {gettext("Remember to grant access.")}
+              {gettext(
+                "Share the \"%{name}\" folder in Google Drive with the users who need access to project documents.",
+                name: @root_name
+              )}
+            </span>
+          </div>
         </div>
       </div>
     </div>

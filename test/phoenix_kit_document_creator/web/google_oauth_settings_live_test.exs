@@ -283,4 +283,115 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
       assert state.browser_loading == false
     end
   end
+
+  describe "root folder" do
+    test "save_folders persists root folder path and name", %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
+
+      render_change(view, "save_folders", %{
+        "root_path" => "workspace",
+        "root_name" => "my-project",
+        "templates_path" => "",
+        "templates_name" => "templates",
+        "documents_path" => "",
+        "documents_name" => "documents",
+        "deleted_path" => "",
+        "deleted_name" => "deleted"
+      })
+
+      state = :sys.get_state(view.pid).socket.assigns
+      assert state.root_path == "workspace"
+      assert state.root_name == "my-project"
+      assert state.success =~ "saved"
+    end
+
+    test "browse_folder with root_path field opens the browser modal", %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
+
+      render_click(view, "browse_folder", %{"field" => "root_path"})
+
+      state = :sys.get_state(view.pid).socket.assigns
+      assert state.browser_open == true
+      assert state.browser_field == "root_path"
+    end
+
+    test "migration banner appears when root changes and cached folder IDs exist",
+         %{conn: conn} do
+      PhoenixKit.Settings.update_json_setting_with_module(
+        "document_creator_folders",
+        %{"templates_folder_id" => "existing-folder-id"},
+        "document_creator"
+      )
+
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
+
+      render_change(view, "save_folders", %{
+        "root_path" => "",
+        "root_name" => "my-project",
+        "templates_path" => "",
+        "templates_name" => "templates",
+        "documents_path" => "",
+        "documents_name" => "documents",
+        "deleted_path" => "",
+        "deleted_name" => "deleted"
+      })
+
+      assert :sys.get_state(view.pid).socket.assigns.migration_needed == true
+    end
+
+    test "skip_migration dismisses the banner", %{conn: conn} do
+      PhoenixKit.Settings.update_json_setting_with_module(
+        "document_creator_folders",
+        %{"templates_folder_id" => "existing-folder-id"},
+        "document_creator"
+      )
+
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
+
+      render_change(view, "save_folders", %{
+        "root_path" => "",
+        "root_name" => "my-project",
+        "templates_path" => "",
+        "templates_name" => "templates",
+        "documents_path" => "",
+        "documents_name" => "documents",
+        "deleted_path" => "",
+        "deleted_name" => "deleted"
+      })
+
+      render_click(view, "skip_migration", %{})
+      assert :sys.get_state(view.pid).socket.assigns.migration_needed == false
+    end
+
+    test "access reminder is visible when root name is set", %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
+
+      render_change(view, "save_folders", %{
+        "root_path" => "",
+        "root_name" => "my-project",
+        "templates_path" => "",
+        "templates_name" => "templates",
+        "documents_path" => "",
+        "documents_name" => "documents",
+        "deleted_path" => "",
+        "deleted_name" => "deleted"
+      })
+
+      html = render(view)
+      assert html =~ "grant access"
+    end
+
+    test "access reminder is not visible when root name is empty", %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
+
+      html = render(view)
+      refute html =~ "grant access"
+    end
+  end
 end
