@@ -365,6 +365,8 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
     creds = Settings.get_json_setting(@folder_settings_key, %{})
 
     %{
+      root_path: creds["folder_path_root"] || "",
+      root_name: non_empty(creds["folder_name_root"], ""),
       templates_path: creds["folder_path_templates"] || "",
       templates_name: non_empty(creds["folder_name_templates"], "templates"),
       documents_path: creds["folder_path_documents"] || "",
@@ -399,6 +401,27 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   defp build_full_path("", name), do: name
   defp build_full_path(path, name), do: "#{path}/#{name}"
 
+  @doc "Compute the three Drive paths (templates, documents, deleted) given a folder config map."
+  @spec resolved_folder_paths(map()) :: {String.t(), String.t(), String.t()}
+  def resolved_folder_paths(config) do
+    root_abs =
+      if config.root_name != "" do
+        build_full_path(config.root_path, config.root_name)
+      else
+        nil
+      end
+
+    prefix = fn path ->
+      if root_abs, do: "#{root_abs}/#{path}", else: path
+    end
+
+    templates = prefix.(build_full_path(config.templates_path, config.templates_name))
+    documents = prefix.(build_full_path(config.documents_path, config.documents_name))
+    deleted = prefix.(build_full_path(config.deleted_path, config.deleted_name))
+
+    {templates, documents, deleted}
+  end
+
   @doc """
   Discover templates, documents, and deleted folder IDs.
   Looks for folders by name in Drive root, creating them if they don't exist.
@@ -413,9 +436,7 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   def discover_folders do
     config = get_folder_config()
 
-    templates_path = build_full_path(config.templates_path, config.templates_name)
-    documents_path = build_full_path(config.documents_path, config.documents_name)
-    deleted_path = build_full_path(config.deleted_path, config.deleted_name)
+    {templates_path, documents_path, deleted_path} = resolved_folder_paths(config)
 
     # Resolve all four folder paths in parallel to minimize sequential API calls.
     #
@@ -496,6 +517,56 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   @doc "The Settings key used for folder configuration."
   @spec folder_settings_key() :: String.t()
   def folder_settings_key, do: @folder_settings_key
+
+  @doc """
+  Move the four known Drive folders (templates, documents, deleted_templates,
+  deleted_documents) into `root_folder_id`. Only moves folders whose cached ID
+  is present. Clears cached IDs on full success so they are re-discovered.
+
+  Returns `{:ok, %{moved: [labels], skipped: [labels]}}` or
+  `{:error, [{label, reason}]}` if any move fails.
+  """
+  @spec migrate_folders_to_root(String.t()) ::
+          {:ok, %{moved: [String.t()], skipped: [String.t()]}}
+          | {:error, [{String.t(), term()}]}
+  def migrate_folders_to_root(root_folder_id) do
+    folder_data = Settings.get_json_setting(@folder_settings_key, %{})
+
+    candidates = [
+      {"templates", folder_data["templates_folder_id"]},
+      {"documents", folder_data["documents_folder_id"]},
+      {"deleted_templates", folder_data["deleted_templates_folder_id"]},
+      {"deleted_documents", folder_data["deleted_documents_folder_id"]}
+    ]
+
+    {to_move, skipped} =
+      Enum.split_with(candidates, fn {_label, id} -> is_binary(id) and id != "" end)
+
+    results =
+      Enum.map(to_move, fn {label, folder_id} ->
+        case move_file(folder_id, root_folder_id) do
+          :ok -> {:ok, label}
+          {:error, reason} -> {:error, {label, reason}}
+        end
+      end)
+
+    failures = for {:error, f} <- results, do: f
+    moved = for {:ok, label} <- results, do: label
+    skipped_labels = for {label, _} <- skipped, do: label
+
+    if failures == [] do
+      cache_keys = ~w(
+        templates_folder_id documents_folder_id
+        deleted_templates_folder_id deleted_documents_folder_id
+      )
+      updated = Map.drop(folder_data, cache_keys)
+      Settings.update_json_setting_with_module(@folder_settings_key, updated, "document_creator")
+      {:ok, %{moved: moved, skipped: skipped_labels}}
+    else
+      Logger.error("Document Creator folder migration failed: #{inspect(failures)}")
+      {:error, failures}
+    end
+  end
 
   @doc """
   List subfolders within a parent folder (non-recursive, fully paginated).

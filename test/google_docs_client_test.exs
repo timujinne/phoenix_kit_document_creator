@@ -57,6 +57,17 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClientTest do
       assert {:list_folder_files, 1} in exports
       assert {:validate_file_id, 1} in exports
     end
+
+    test "exports get_folder_config/0 and resolved_folder_paths/1" do
+      exports = GoogleDocsClient.__info__(:functions)
+      assert {:get_folder_config, 0} in exports
+      assert {:resolved_folder_paths, 1} in exports
+    end
+
+    test "exports migrate_folders_to_root/1" do
+      exports = GoogleDocsClient.__info__(:functions)
+      assert {:migrate_folders_to_root, 1} in exports
+    end
   end
 
   describe "get_edit_url/1" do
@@ -293,6 +304,53 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClientTest do
 
     test "rejects invalid folder ID" do
       assert {:error, :invalid_file_id} = GoogleDocsClient.move_file("file123", "folder/bad")
+    end
+  end
+
+  describe "resolved_folder_paths/1" do
+    test "no root: paths are unchanged" do
+      config = %{
+        root_path: "", root_name: "",
+        templates_path: "", templates_name: "templates",
+        documents_path: "clients", documents_name: "docs",
+        deleted_path: "", deleted_name: "deleted"
+      }
+
+      {t, d, del} = GoogleDocsClient.resolved_folder_paths(config)
+
+      assert t == "templates"
+      assert d == "clients/docs"
+      assert del == "deleted"
+    end
+
+    test "root set: all paths prefixed with root" do
+      config = %{
+        root_path: "", root_name: "my-project",
+        templates_path: "", templates_name: "šabloonid",
+        documents_path: "", documents_name: "dokumendid",
+        deleted_path: "", deleted_name: "kustutatud"
+      }
+
+      {t, d, del} = GoogleDocsClient.resolved_folder_paths(config)
+
+      assert t == "my-project/šabloonid"
+      assert d == "my-project/dokumendid"
+      assert del == "my-project/kustutatud"
+    end
+
+    test "root with path: root path prefixes root name" do
+      config = %{
+        root_path: "workspace", root_name: "project",
+        templates_path: "", templates_name: "templates",
+        documents_path: "", documents_name: "documents",
+        deleted_path: "", deleted_name: "deleted"
+      }
+
+      {t, d, del} = GoogleDocsClient.resolved_folder_paths(config)
+
+      assert t == "workspace/project/templates"
+      assert d == "workspace/project/documents"
+      assert del == "workspace/project/deleted"
     end
   end
 end
