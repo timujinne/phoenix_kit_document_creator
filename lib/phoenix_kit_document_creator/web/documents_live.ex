@@ -1165,10 +1165,29 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
     cats = Taxonomy.list_categories()
     cat_names = Map.new(cats, &{&1.uuid, &1.name})
 
-    type_names =
+    # category_options/0 includes the leading {nil, "No category"} entry;
+    # drop the nil entry here so the template only loops over real options.
+    cat_options =
       cats
-      |> Enum.flat_map(fn cat -> Taxonomy.list_types_for_category(cat.uuid) end)
-      |> Map.new(&{&1.uuid, &1.name})
+      |> Enum.map(&{&1.uuid, &1.name})
+
+    # types_by_category: %{category_uuid => [{type_uuid, type_name}, ...]}
+    # Built once per grid render; each picker row reads from this map instead
+    # of issuing its own query.
+    types_by_category =
+      Map.new(cats, fn cat ->
+        options =
+          cat.uuid
+          |> Taxonomy.list_types_for_category()
+          |> Enum.map(&{&1.uuid, &1.name})
+
+        {cat.uuid, options}
+      end)
+
+    type_names =
+      types_by_category
+      |> Enum.flat_map(fn {_cat_uuid, opts} -> opts end)
+      |> Map.new()
 
     %{
       files: files,
@@ -1179,6 +1198,8 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
       is_template: assigns.live_action == :templates,
       enabled_languages: assigns.enabled_languages,
       category_names: cat_names,
+      cat_options: cat_options,
+      types_by_category: types_by_category,
       type_names: type_names
     }
   end
@@ -1268,6 +1289,8 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
                 is_template: @is_template,
                 status_mode: @status_mode,
                 category_names: @category_names,
+                cat_options: @cat_options,
+                types_by_category: @types_by_category,
                 type_names: @type_names
               })}
             </div>
@@ -1365,6 +1388,8 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
                     is_template: @is_template,
                     status_mode: @status_mode,
                     category_names: @category_names,
+                    cat_options: @cat_options,
+                    types_by_category: @types_by_category,
                     type_names: @type_names
                   })}
                 </div>
@@ -1534,14 +1559,19 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
   end
 
   defp render_category_picker(assigns) do
-    cat_name = assigns.category_names[assigns.file["category_uuid"]]
-    type_name = assigns.type_names[assigns.file["type_uuid"]]
-    assigns = assign(assigns, cat_name: cat_name, type_name: type_name)
+    # Resolve display names from the precomputed lookup maps (no DB call per row).
+    assigns =
+      Map.merge(assigns, %{
+        cat_name: assigns.category_names[assigns.file["category_uuid"]],
+        type_name: assigns.type_names[assigns.file["type_uuid"]],
+        # Types for the currently selected category (nil → empty list).
+        type_options: Map.get(assigns.types_by_category, assigns.file["category_uuid"], [])
+      })
 
     ~H"""
     <div class="flex items-center gap-1">
       <%= if @status_mode == "trashed" do %>
-        <%!-- In trash view show read-only name badges --%>
+        <%!-- In trash view: read-only name badges --%>
         <span
           :if={@cat_name}
           class="badge badge-xs badge-secondary"
@@ -1557,7 +1587,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
           {@type_name}
         </span>
       <% else %>
-        <%!-- Active view: interactive selects --%>
+        <%!-- Active view: interactive selects sourced from precomputed options --%>
         <select
           class="select select-bordered select-xs"
           phx-change="set_taxonomy_category"
@@ -1566,7 +1596,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
           title={gettext("Category")}
         >
           <option value="">{gettext("No category")}</option>
-          <%= for {uuid, name} <- Taxonomy.category_options() |> Enum.reject(fn {u, _} -> is_nil(u) end) do %>
+          <%= for {uuid, name} <- @cat_options do %>
             <option value={uuid} selected={@file["category_uuid"] == uuid}>{name}</option>
           <% end %>
         </select>
@@ -1580,7 +1610,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
           title={gettext("Type")}
         >
           <option value="">{gettext("No type")}</option>
-          <%= for {uuid, name} <- Taxonomy.type_options(@file["category_uuid"]) |> Enum.reject(fn {u, _} -> is_nil(u) end) do %>
+          <%= for {uuid, name} <- @type_options do %>
             <option value={uuid} selected={@file["type_uuid"] == uuid}>{name}</option>
           <% end %>
         </select>
