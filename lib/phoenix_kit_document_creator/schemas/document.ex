@@ -34,6 +34,18 @@ defmodule PhoenixKitDocumentCreator.Schemas.Document do
       type: UUIDv7
     )
 
+    belongs_to(:category, PhoenixKitDocumentCreator.Schemas.Category,
+      foreign_key: :category_uuid,
+      references: :uuid,
+      type: UUIDv7
+    )
+
+    belongs_to(:type, PhoenixKitDocumentCreator.Schemas.Type,
+      foreign_key: :type_uuid,
+      references: :uuid,
+      type: UUIDv7
+    )
+
     field(:content_html, :string, default: "")
     field(:content_css, :string, default: "")
     field(:content_native, :map)
@@ -64,6 +76,8 @@ defmodule PhoenixKitDocumentCreator.Schemas.Document do
   @required_fields [:name]
   @optional_fields [
     :template_uuid,
+    :category_uuid,
+    :type_uuid,
     :google_doc_id,
     :path,
     :folder_id,
@@ -90,6 +104,8 @@ defmodule PhoenixKitDocumentCreator.Schemas.Document do
     |> validate_required(@required_fields)
     |> validate_length(:name, min: 1, max: 255)
     |> validate_inclusion(:status, @statuses)
+    |> foreign_key_constraint(:category_uuid)
+    |> foreign_key_constraint(:type_uuid)
   end
 
   @doc "Changeset for upserting from Google Drive sync data."
@@ -108,6 +124,8 @@ defmodule PhoenixKitDocumentCreator.Schemas.Document do
       :name,
       :google_doc_id,
       :template_uuid,
+      :category_uuid,
+      :type_uuid,
       :variable_values,
       :status,
       :thumbnail,

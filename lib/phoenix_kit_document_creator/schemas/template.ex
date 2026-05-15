@@ -30,7 +30,18 @@ defmodule PhoenixKitDocumentCreator.Schemas.Template do
     field(:path, :string)
     field(:folder_id, :string)
     field(:language, :string)
-    field(:category, :string)
+
+    belongs_to(:category, PhoenixKitDocumentCreator.Schemas.Category,
+      foreign_key: :category_uuid,
+      references: :uuid,
+      type: UUIDv7
+    )
+
+    belongs_to(:type, PhoenixKitDocumentCreator.Schemas.Type,
+      foreign_key: :type_uuid,
+      references: :uuid,
+      type: UUIDv7
+    )
 
     field(:content_html, :string, default: "")
     field(:content_css, :string, default: "")
@@ -67,6 +78,8 @@ defmodule PhoenixKitDocumentCreator.Schemas.Template do
     :path,
     :folder_id,
     :language,
+    :category_uuid,
+    :type_uuid,
     :content_html,
     :content_css,
     :content_native,
@@ -76,8 +89,7 @@ defmodule PhoenixKitDocumentCreator.Schemas.Template do
     :config,
     :data,
     :thumbnail,
-    :created_by_uuid,
-    :category
+    :created_by_uuid
   ]
 
   def changeset(template, attrs) do
@@ -90,6 +102,8 @@ defmodule PhoenixKitDocumentCreator.Schemas.Template do
     |> validate_inclusion(:status, @statuses)
     |> maybe_generate_slug()
     |> unique_constraint(:slug)
+    |> foreign_key_constraint(:category_uuid)
+    |> foreign_key_constraint(:type_uuid)
   end
 
   defp maybe_generate_slug(changeset) do
