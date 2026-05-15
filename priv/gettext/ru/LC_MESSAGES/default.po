@@ -8,359 +8,1020 @@ msgstr ""
 msgid "Document Creator"
 msgstr "Создание документов"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:79
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:880
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:515
+#, elixir-autogen
 msgid "Documents"
 msgstr "Документы"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:78
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:880
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:490
+#, elixir-autogen
 msgid "Templates"
 msgstr "Шаблоны"
 
 ## Page titles
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:69
+#, elixir-autogen
 msgid "Document Creator — Folders"
 msgstr "Создание документов — папки"
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:392
+#, elixir-autogen
 msgid "Document Creator Settings"
 msgstr "Настройки создания документов"
 
 ## Section headings
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:863
+#, elixir-autogen
 msgid "Google Account Not Connected"
 msgstr "Аккаунт Google не подключён"
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:430
+#, elixir-autogen
 msgid "Google Account"
 msgstr "Аккаунт Google"
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:452
+#, elixir-autogen
 msgid "Drive Folders"
 msgstr "Папки Drive"
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:594
+#, elixir-autogen
 msgid "Select Folder"
 msgstr "Выбрать папку"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1073
+#, elixir-autogen
 msgid "Resolve Unfiled Item"
 msgstr "Обработать неразложенный файл"
 
+#: lib/phoenix_kit_document_creator/web/components/create_document_modal.ex:43
+#, elixir-autogen
 msgid "Create New Document"
 msgstr "Создать новый документ"
 
+#: lib/phoenix_kit_document_creator/web/components/create_document_modal.ex:95
+#, elixir-autogen
 msgid "Fill Template Variables"
 msgstr "Заполнить переменные шаблона"
 
 ## Help & descriptive text
+#: lib/phoenix_kit_document_creator/web/components/create_document_modal.ex:44
+#, elixir-autogen
 msgid "Start blank or choose a template."
 msgstr "Начните с пустого документа или выберите шаблон."
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:394
+#, elixir-autogen
 msgid "Configure Google Drive folders for templates and documents."
 msgstr "Настройте папки Google Drive для шаблонов и документов."
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:454
+#, elixir-autogen
 msgid "Customize the Google Drive folder names used for storage. Folders are created automatically if they don't exist."
 msgstr "Настройте имена папок Google Drive для хранения. Папки создаются автоматически, если их нет."
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:565
+#, elixir-autogen
 msgid "Click the path button to browse your Google Drive. Deleted items go to subfolders inside the deleted folder. Folders are created automatically if they don't exist."
 msgstr "Нажмите на кнопку пути, чтобы просмотреть Google Drive. Удалённые элементы помещаются в подпапки внутри папки удалённых. Папки создаются автоматически, если их нет."
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:443
+#, elixir-autogen
 msgid "Manage your Google connections in"
 msgstr "Управляйте подключениями Google в"
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:444
+#, elixir-autogen
 msgid "Settings → Integrations"
 msgstr "Настройки → Интеграции"
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:615
+#, elixir-autogen
 msgid "No subfolders"
 msgstr "Нет подпапок"
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:280
+#, elixir-autogen
 msgid "My Drive"
 msgstr "Мой диск"
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:467
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:498
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:523
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:548
+#, elixir-autogen
 msgid "Browse Google Drive — root"
 msgstr "Просмотреть Google Drive — корень"
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:467
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:498
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:523
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:548
+#, elixir-autogen
 msgid "Browse Google Drive — %{path}"
 msgstr "Просмотреть Google Drive — %{path}"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1077
+#, elixir-autogen
 msgid "Choose how %{name} should be handled."
 msgstr "Выберите, как обработать %{name}."
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1081
+#, elixir-autogen
 msgid "Saved location:"
 msgstr "Сохранённое расположение:"
 
 ## Action buttons
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:871
+#, elixir-autogen
 msgid "Go to Settings"
 msgstr "Перейти в настройки"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:899
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:915
+#, elixir-autogen
 msgid "Open Folder"
 msgstr "Открыть папку"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:906
+#, elixir-autogen
 msgid "New Template"
 msgstr "Новый шаблон"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:922
+#, elixir-autogen
 msgid "New Document"
 msgstr "Новый документ"
 
+#: lib/phoenix_kit_document_creator/web/components/create_document_modal.ex:150
+#, elixir-autogen
 msgid "Create Document"
 msgstr "Создать документ"
 
+#: lib/phoenix_kit_document_creator/web/components/create_document_modal.ex:54
+#, elixir-autogen
 msgid "Blank Document"
 msgstr "Пустой документ"
 
+#: lib/phoenix_kit_document_creator/web/components/create_document_modal.ex:58
+#, elixir-autogen
 msgid "or from template"
 msgstr "или из шаблона"
 
+#: lib/phoenix_kit_document_creator/web/components/create_document_modal.ex:104
+#, elixir-autogen
 msgid "Document Name"
 msgstr "Название документа"
 
+#: lib/phoenix_kit_document_creator/web/category_form_live.ex:160
+#: lib/phoenix_kit_document_creator/web/components/create_document_modal.ex:83
+#: lib/phoenix_kit_document_creator/web/components/create_document_modal.ex:142
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1088
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:635
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:204
+#, elixir-autogen
 msgid "Cancel"
 msgstr "Отмена"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1287
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1401
+#, elixir-autogen
 msgid "View"
 msgstr "Просмотр"
 
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:329
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:364
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1295
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1410
+#, elixir-autogen
 msgid "Edit"
 msgstr "Редактировать"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1305
+#, elixir-autogen
 msgid "PDF"
 msgstr "PDF"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1420
+#, elixir-autogen
 msgid "Export PDF"
 msgstr "Экспорт PDF"
 
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:340
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:375
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1312
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1430
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1434
+#, elixir-autogen
 msgid "Restore"
 msgstr "Восстановить"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1441
+#, elixir-autogen
 msgid "Delete"
 msgstr "Удалить"
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:573
+#, elixir-autogen
 msgid "Save Folder Settings"
 msgstr "Сохранить настройки папок"
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:637
+#, elixir-autogen
 msgid "Select Current Folder"
 msgstr "Выбрать текущую папку"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1098
+#, elixir-autogen
 msgid "Set This As Correct Location"
 msgstr "Назначить это правильным расположением"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1108
+#, elixir-autogen
 msgid "Move To Documents"
 msgstr "Переместить в документы"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1118
+#, elixir-autogen
 msgid "Move To Templates"
 msgstr "Переместить в шаблоны"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1485
+#, elixir-autogen
 msgid "Template language"
 msgstr "Язык шаблона"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1491
+#, elixir-autogen
 msgid "Set language"
 msgstr "Задать язык"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1529
+#, elixir-autogen
 msgid "Clear language"
 msgstr "Очистить язык"
 
 ## Loading / progress states
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:887
+#, elixir-autogen
 msgid "Refreshing…"
 msgstr "Обновление…"
 
+#: lib/phoenix_kit_document_creator/web/components/create_document_modal.ex:51
+#: lib/phoenix_kit_document_creator/web/components/create_document_modal.ex:147
+#: lib/phoenix_kit_document_creator/web/components/create_document_modal.ex:150
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:904
+#, elixir-autogen
 msgid "Creating…"
 msgstr "Создание…"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:920
+#, elixir-autogen
 msgid "Opening…"
 msgstr "Открытие…"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1096
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1106
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1116
+#, elixir-autogen
 msgid "Working…"
 msgstr "Выполняется…"
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:465
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:496
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:521
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:546
+#, elixir-autogen
 msgid "Loading…"
 msgstr "Загрузка…"
 
+#: lib/phoenix_kit_document_creator/web/category_form_live.ex:162
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:571
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:206
+#, elixir-autogen
 msgid "Saving…"
 msgstr "Сохранение…"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1303
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1421
+#, elixir-autogen
 msgid "Exporting…"
 msgstr "Экспорт…"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1313
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1431
+#, elixir-autogen
 msgid "Restoring…"
 msgstr "Восстановление…"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1322
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1442
+#, elixir-autogen
 msgid "Deleting…"
 msgstr "Удаление…"
 
 ## Table headers / form labels
+#: lib/phoenix_kit_document_creator/web/category_form_live.ex:129
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1017
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1335
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:149
+#, elixir-autogen
 msgid "Name"
 msgstr "Название"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1018
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1337
+#, elixir-autogen
 msgid "Modified"
 msgstr "Изменён"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1019
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1338
+#, elixir-autogen
 msgid "Actions"
 msgstr "Действия"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1336
+#, elixir-autogen
 msgid "Status"
 msgstr "Статус"
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:540
+#, elixir-autogen
 msgid "Deleted"
 msgstr "Удалённые"
 
 ## Placeholders
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:508
+#, elixir-autogen
 msgid "templates"
 msgstr "шаблоны"
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:533
+#, elixir-autogen
 msgid "documents"
 msgstr "документы"
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:558
+#, elixir-autogen
 msgid "deleted"
 msgstr "удалённые"
 
 ## Status badges
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:221
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:281
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:938
+#, elixir-autogen
 msgid "Active"
 msgstr "Активные"
 
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:228
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:288
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:334
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:369
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:939
+#, elixir-autogen
 msgid "Trash"
 msgstr "Корзина"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1240
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1374
+#, elixir-autogen
 msgid "lost"
 msgstr "потерян"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1256
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1390
+#, elixir-autogen
 msgid "unfiled"
 msgstr "не разложен"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1458
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1459
+#, elixir-autogen
 msgid "root"
 msgstr "корень"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1192
+#, elixir-autogen
 msgid "Trash is empty"
 msgstr "Корзина пуста"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1195
+#, elixir-autogen
 msgid "No files yet"
 msgstr "Файлов пока нет"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1238
+#, elixir-autogen
 msgid "File not found in Google Drive"
 msgstr "Файл не найден в Google Drive"
 
 ## Default names
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:354
+#, elixir-autogen
 msgid "Untitled Template"
 msgstr "Шаблон без названия"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:430
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:541
+#, elixir-autogen
 msgid "Untitled Document"
 msgstr "Документ без названия"
 
 ## Flash messages
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:799
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:810
+#, elixir-autogen
 msgid "Moved to deleted folder"
 msgstr "Перемещено в папку удалённых"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:821
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:832
+#, elixir-autogen
 msgid "Restored"
 msgstr "Восстановлено"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1462
+#, elixir-autogen
 msgid "Moved to templates"
 msgstr "Перемещено в шаблоны"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1463
+#, elixir-autogen
 msgid "Moved to documents"
 msgstr "Перемещено в документы"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1464
+#, elixir-autogen
 msgid "Saved current location"
 msgstr "Текущее расположение сохранено"
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1465
+#, elixir-autogen
 msgid "Updated"
 msgstr "Обновлено"
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:148
+#, elixir-autogen
 msgid "Connection updated"
 msgstr "Подключение обновлено"
 
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:221
+#, elixir-autogen
 msgid "Folder settings saved"
 msgstr "Настройки папок сохранены"
 
 ## Error messages
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:361
+#, elixir-autogen
 msgid "Failed to create template. Please try again."
 msgstr "Не удалось создать шаблон. Попробуйте ещё раз."
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:387
+#, elixir-autogen
 msgid "Failed to update template language."
 msgstr "Не удалось обновить язык шаблона."
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:437
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:556
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:596
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:774
+#, elixir-autogen
 msgid "Failed to create document. Please try again."
 msgstr "Не удалось создать документ. Попробуйте ещё раз."
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:662
+#, elixir-autogen
 msgid "Action failed. Please try again."
 msgstr "Не удалось выполнить действие. Попробуйте ещё раз."
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:688
+#, elixir-autogen
 msgid "PDF export failed. Please try again."
 msgstr "Не удалось экспортировать PDF. Попробуйте ещё раз."
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:800
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:811
+#, elixir-autogen
 msgid "Delete failed. Please try again."
 msgstr "Не удалось удалить. Попробуйте ещё раз."
 
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:822
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:833
+#, elixir-autogen
 msgid "Restore failed. Please try again."
 msgstr "Не удалось восстановить. Попробуйте ещё раз."
 
 ## Errors module
+#: lib/phoenix_kit_document_creator/errors.ex:64
+#, elixir-autogen
 msgid "Failed to copy the Google Doc"
 msgstr "Не удалось скопировать Google-документ"
 
+#: lib/phoenix_kit_document_creator/errors.ex:65
+#, elixir-autogen
 msgid "Failed to create the Google Doc"
 msgstr "Не удалось создать Google-документ"
 
+#: lib/phoenix_kit_document_creator/errors.ex:66
+#, elixir-autogen
 msgid "Failed to create the Drive folder"
 msgstr "Не удалось создать папку в Drive"
 
+#: lib/phoenix_kit_document_creator/errors.ex:67
+#, elixir-autogen
 msgid "Deleted folder not found"
 msgstr "Папка удалённых не найдена"
 
+#: lib/phoenix_kit_document_creator/errors.ex:68
+#, elixir-autogen
 msgid "Documents folder not found"
 msgstr "Папка документов не найдена"
 
+#: lib/phoenix_kit_document_creator/errors.ex:69
+#, elixir-autogen
 msgid "File is in the Drive trash"
 msgstr "Файл находится в корзине Drive"
 
+#: lib/phoenix_kit_document_creator/errors.ex:70
+#, elixir-autogen
 msgid "Folder not found"
 msgstr "Папка не найдена"
 
+#: lib/phoenix_kit_document_creator/errors.ex:71
+#, elixir-autogen
 msgid "Failed to search Drive for the folder"
 msgstr "Не удалось найти папку в Drive"
 
+#: lib/phoenix_kit_document_creator/errors.ex:72
+#, elixir-autogen
 msgid "Failed to read file parents from Drive"
 msgstr "Не удалось прочитать родительские папки файла из Drive"
 
+#: lib/phoenix_kit_document_creator/errors.ex:73
+#, elixir-autogen
 msgid "Invalid action"
 msgstr "Недопустимое действие"
 
+#: lib/phoenix_kit_document_creator/errors.ex:74
+#, elixir-autogen
 msgid "Invalid file ID"
 msgstr "Недопустимый идентификатор файла"
 
+#: lib/phoenix_kit_document_creator/errors.ex:75
+#, elixir-autogen
 msgid "Invalid Google Doc ID"
 msgstr "Недопустимый идентификатор Google-документа"
 
+#: lib/phoenix_kit_document_creator/errors.ex:76
+#, elixir-autogen
 msgid "Invalid parent folder ID"
 msgstr "Недопустимый идентификатор родительской папки"
 
+#: lib/phoenix_kit_document_creator/errors.ex:77
+#, elixir-autogen
 msgid "Failed to list Drive files"
 msgstr "Не удалось получить список файлов Drive"
 
+#: lib/phoenix_kit_document_creator/errors.ex:78
+#, elixir-autogen
 msgid "Live folder not found"
 msgstr "Активная папка не найдена"
 
+#: lib/phoenix_kit_document_creator/errors.ex:79
+#, elixir-autogen
 msgid "Maximum folder depth exceeded"
 msgstr "Превышена максимальная глубина вложенности папок"
 
+#: lib/phoenix_kit_document_creator/errors.ex:80
+#, elixir-autogen
 msgid "Missing Google Doc ID"
 msgstr "Отсутствует идентификатор Google-документа"
 
+#: lib/phoenix_kit_document_creator/errors.ex:81
+#, elixir-autogen
 msgid "Missing name"
 msgstr "Отсутствует название"
 
+#: lib/phoenix_kit_document_creator/errors.ex:82
+#, elixir-autogen
 msgid "Failed to move the Drive file"
 msgstr "Не удалось переместить файл в Drive"
 
+#: lib/phoenix_kit_document_creator/errors.ex:83
+#, elixir-autogen
 msgid "No Google Doc ID set on this record"
 msgstr "У записи не указан идентификатор Google-документа"
 
+#: lib/phoenix_kit_document_creator/errors.ex:84
+#, elixir-autogen
 msgid "No thumbnail available"
 msgstr "Эскиз недоступен"
 
+#: lib/phoenix_kit_document_creator/errors.ex:85
+#, elixir-autogen
 msgid "Not found"
 msgstr "Не найдено"
 
+#: lib/phoenix_kit_document_creator/errors.ex:86
+#, elixir-autogen
 msgid "Failed to export PDF from Drive"
 msgstr "Не удалось экспортировать PDF из Drive"
 
+#: lib/phoenix_kit_document_creator/errors.ex:87
+#, elixir-autogen
 msgid "Failed to sync from Google Drive"
 msgstr "Не удалось синхронизировать с Google Drive"
 
+#: lib/phoenix_kit_document_creator/errors.ex:88
+#, elixir-autogen
 msgid "Templates folder not found"
 msgstr "Папка шаблонов не найдена"
 
+#: lib/phoenix_kit_document_creator/errors.ex:89
+#, elixir-autogen
 msgid "Failed to fetch the thumbnail"
 msgstr "Не удалось получить эскиз"
 
+#: lib/phoenix_kit_document_creator/errors.ex:90
+#, elixir-autogen
 msgid "Failed to read the thumbnail link from Drive"
 msgstr "Не удалось получить ссылку на эскиз из Drive"
+
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:483
+#, elixir-autogen, elixir-format
+msgid "All folders will be created inside this directory."
+msgstr "Все папки будут созданы внутри этого каталога."
+
+#: lib/phoenix_kit_document_creator/web/category_form_live.ex:183
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:227
+#, elixir-autogen, elixir-format
+msgid "Are you sure? This cannot be undone."
+msgstr "Вы уверены? Это действие нельзя отменить."
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:22
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:200
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:208
+#, elixir-autogen, elixir-format
+msgid "Categories"
+msgstr "Категории"
+
+#: lib/phoenix_kit_document_creator/web/category_form_live.ex:24
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1548
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1566
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:180
+#, elixir-autogen, elixir-format
+msgid "Category"
+msgstr "Категория"
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:117
+#: lib/phoenix_kit_document_creator/web/category_form_live.ex:102
+#, elixir-autogen, elixir-format
+msgid "Category permanently deleted."
+msgstr "Категория удалена окончательно."
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:101
+#, elixir-autogen, elixir-format
+msgid "Category restored."
+msgstr "Категория восстановлена."
+
+#: lib/phoenix_kit_document_creator/web/category_form_live.ex:87
+#, elixir-autogen, elixir-format
+msgid "Category saved."
+msgstr "Категория сохранена."
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:82
+#, elixir-autogen, elixir-format
+msgid "Category trashed. Its types and templates have also been moved to trash."
+msgstr "Категория перемещена в корзину. Её типы и шаблоны также перемещены в корзину."
+
+#: lib/phoenix_kit_document_creator/web/components/create_document_modal.ex:175
+#, elixir-autogen, elixir-format
+msgid "Choose image"
+msgstr "Выбрать изображение"
+
+#: lib/phoenix_kit_document_creator/web/components/create_document_modal.ex:201
+#, elixir-autogen, elixir-format
+msgid "Choose images"
+msgstr "Выбрать изображения"
+
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:264
+#, elixir-autogen, elixir-format
+msgid "Could not create root folder \"%{name}\""
+msgstr "Не удалось создать корневую папку \"%{name}\""
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:123
+#: lib/phoenix_kit_document_creator/web/category_form_live.ex:107
+#, elixir-autogen, elixir-format
+msgid "Could not delete category."
+msgstr "Не удалось удалить категорию."
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:181
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:127
+#, elixir-autogen, elixir-format
+msgid "Could not delete type."
+msgstr "Не удалось удалить тип."
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:106
+#, elixir-autogen, elixir-format
+msgid "Could not restore category."
+msgstr "Не удалось восстановить категорию."
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:165
+#, elixir-autogen, elixir-format
+msgid "Could not restore type."
+msgstr "Не удалось восстановить тип."
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:90
+#, elixir-autogen, elixir-format
+msgid "Could not trash category."
+msgstr "Не удалось переместить категорию в корзину."
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:149
+#, elixir-autogen, elixir-format
+msgid "Could not trash type."
+msgstr "Не удалось переместить тип в корзину."
+
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1656
+#, elixir-autogen, elixir-format
+msgid "Could not update category"
+msgstr "Не удалось обновить категорию"
+
+#: lib/phoenix_kit_document_creator/web/category_form_live.ex:174
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:218
+#, elixir-autogen, elixir-format
+msgid "Danger Zone"
+msgstr "Опасная зона"
+
+#: lib/phoenix_kit_document_creator/web/components/variable_config_form.ex:20
+#: lib/phoenix_kit_document_creator/web/components/variable_config_form.ex:44
+#, elixir-autogen, elixir-format
+msgid "Default width (px)"
+msgstr "Ширина по умолчанию (px)"
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:345
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:380
+#: lib/phoenix_kit_document_creator/web/category_form_live.ex:185
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:229
+#, elixir-autogen, elixir-format, fuzzy
+msgid "Delete Forever"
+msgstr "Удалить"
+
+#: lib/phoenix_kit_document_creator/web/category_form_live.ex:146
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:166
+#, elixir-autogen, elixir-format
+msgid "Description"
+msgstr "Описание"
+
+#: lib/phoenix_kit_document_creator/web/category_form_live.ex:45
+#: lib/phoenix_kit_document_creator/web/category_form_live.ex:120
+#, elixir-autogen, elixir-format
+msgid "Edit Category"
+msgstr "Редактировать категорию"
+
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:48
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:140
+#, elixir-autogen, elixir-format, fuzzy
+msgid "Edit Type"
+msgstr "Редактировать"
+
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:412
+#, elixir-autogen, elixir-format
+msgid "Existing folders found at their current location."
+msgstr "Существующие папки найдены по текущему расположению."
+
+#: lib/phoenix_kit_document_creator/errors.ex:97
+#, elixir-autogen, elixir-format
+msgid "Failed to insert images into document"
+msgstr "Не удалось вставить изображения в документ"
+
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:532
+#, elixir-autogen, elixir-format
+msgid "Failed to save variable configuration. Please try again."
+msgstr "Не удалось сохранить конфигурацию переменных. Попробуйте ещё раз."
+
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1251
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1385
+#, elixir-autogen, elixir-format
+msgid "File exists in Drive but is outside the configured Document Creator folders"
+msgstr "Файл существует на Диске, но находится за пределами настроенных папок конструктора документов"
+
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:247
+#, elixir-autogen, elixir-format
+msgid "Folders moved to \"%{name}\""
+msgstr "Папки перемещены в \"%{name}\""
+
+#: lib/phoenix_kit_document_creator/errors.ex:95
+#, elixir-autogen, elixir-format
+msgid "Image URL is not publicly accessible or exceeds 2 KB"
+msgstr "URL изображения недоступен публично или превышает 2 КБ"
+
+#: lib/phoenix_kit_document_creator/errors.ex:92
+#, elixir-autogen, elixir-format
+msgid "Image media not found"
+msgstr "Медиафайл изображения не найден"
+
+#: lib/phoenix_kit_document_creator/errors.ex:98
+#, elixir-autogen, elixir-format
+msgid "Image placeholder tag not found in template"
+msgstr "Тег-заполнитель изображения не найден в шаблоне"
+
+#: lib/phoenix_kit_document_creator/web/components/variable_config_form.ex:71
+#, elixir-autogen, elixir-format
+msgid "Max images (blank = unlimited)"
+msgstr "Максимум изображений (пусто = без ограничений)"
+
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:256
+#, elixir-autogen, elixir-format
+msgid "Migration failed for: %{folders}"
+msgstr "Миграция завершилась ошибкой для: %{folders}"
+
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:422
+#, elixir-autogen, elixir-format, fuzzy
+msgid "Move folders"
+msgstr "Нет подпапок"
+
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:413
+#, elixir-autogen, elixir-format
+msgid "Move templates, documents, and deleted into \"%{name}\"?"
+msgstr "Переместить шаблоны, документы и удалённые в \"%{name}\"?"
+
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:420
+#, elixir-autogen, elixir-format, fuzzy
+msgid "Moving…"
+msgstr "Сохранение…"
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:210
+#, elixir-autogen, elixir-format
+msgid "New"
+msgstr "Новый"
+
+#: lib/phoenix_kit_document_creator/web/category_form_live.ex:55
+#: lib/phoenix_kit_document_creator/web/category_form_live.ex:120
+#, elixir-autogen, elixir-format
+msgid "New Category"
+msgstr "Новая категория"
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:268
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:61
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:74
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:140
+#, elixir-autogen, elixir-format
+msgid "New Type"
+msgstr "Новый тип"
+
+#: lib/phoenix_kit_document_creator/web/components/variable_config_form.ex:64
+#, elixir-autogen, elixir-format
+msgid "New line"
+msgstr "Новая строка"
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:236
+#, elixir-autogen, elixir-format
+msgid "No categories yet."
+msgstr "Категорий пока нет."
+
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1568
+#, elixir-autogen, elixir-format
+msgid "No category"
+msgstr "Без категории"
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:236
+#, elixir-autogen, elixir-format
+msgid "No trashed categories."
+msgstr "Нет категорий в корзине."
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:295
+#, elixir-autogen, elixir-format
+msgid "No trashed types."
+msgstr "Нет типов в корзине."
+
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1582
+#, elixir-autogen, elixir-format
+msgid "No type"
+msgstr "Без типа"
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:295
+#, elixir-autogen, elixir-format
+msgid "No types yet."
+msgstr "Типов пока нет."
+
+#: lib/phoenix_kit_document_creator/web/components/variable_config_form.ex:66
+#, elixir-autogen, elixir-format
+msgid "None"
+msgstr "Нет"
+
+#: lib/phoenix_kit_document_creator/web/category_form_live.ex:147
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:167
+#, elixir-autogen, elixir-format
+msgid "Optional"
+msgstr "Необязательно"
+
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:681
+#, elixir-autogen, elixir-format
+msgid "PDF is too large to download directly. Please export from Google Docs instead."
+msgstr "PDF слишком большой для прямой загрузки. Пожалуйста, экспортируйте из Google Docs."
+
+#: lib/phoenix_kit_document_creator/web/category_form_live.ex:176
+#, elixir-autogen, elixir-format
+msgid "Permanently deleting a category also deletes all its types. Templates and documents will lose their category assignment."
+msgstr "Окончательное удаление категории также удаляет все её типы. Шаблоны и документы потеряют привязку к категории."
+
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:220
+#, elixir-autogen, elixir-format
+msgid "Permanently deleting a type removes it from all templates and documents (FK set to NULL)."
+msgstr "Окончательное удаление типа удаляет его из всех шаблонов и документов (FK устанавливается в NULL)."
+
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:580
+#, elixir-autogen, elixir-format
+msgid "Remember to grant access."
+msgstr "Не забудьте предоставить доступ."
+
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:459
+#, elixir-autogen, elixir-format
+msgid "Root folder"
+msgstr "Корневая папка"
+
+#: lib/phoenix_kit_document_creator/web/category_form_live.ex:163
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:207
+#, elixir-autogen, elixir-format
+msgid "Save"
+msgstr "Сохранить"
+
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:187
+#, elixir-autogen, elixir-format
+msgid "Select a category"
+msgstr "Выберите категорию"
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:307
+#, elixir-autogen, elixir-format
+msgid "Select a category to see its types."
+msgstr "Выберите категорию, чтобы увидеть её типы."
+
+#: lib/phoenix_kit_document_creator/web/components/variable_config_form.ex:57
+#, elixir-autogen, elixir-format
+msgid "Separator"
+msgstr "Разделитель"
+
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:581
+#, elixir-autogen, elixir-format
+msgid "Share the \"%{name}\" folder in Google Drive with the users who need access to project documents."
+msgstr "Поделитесь папкой \"%{name}\" на Google Диске с пользователями, которым нужен доступ к документам проекта."
+
+#: lib/phoenix_kit_document_creator/web/google_oauth_settings_live.ex:416
+#, elixir-autogen, elixir-format
+msgid "Skip"
+msgstr "Пропустить"
+
+#: lib/phoenix_kit_document_creator/web/components/variable_config_form.ex:65
+#, elixir-autogen, elixir-format
+msgid "Space"
+msgstr "Пробел"
+
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:865
+#, elixir-autogen, elixir-format
+msgid "The Document Creator uses Google Docs for editing and Google Drive for storage. Connect a Google account in Settings to get started."
+msgstr "Конструктор документов использует Google Docs для редактирования и Google Диск для хранения. Подключите аккаунт Google в Настройках для начала работы."
+
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1555
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:1580
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:25
+#, elixir-autogen, elixir-format
+msgid "Type"
+msgstr "Тип"
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:176
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:122
+#, elixir-autogen, elixir-format
+msgid "Type permanently deleted."
+msgstr "Тип удалён окончательно."
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:160
+#, elixir-autogen, elixir-format
+msgid "Type restored."
+msgstr "Тип восстановлен."
+
+#: lib/phoenix_kit_document_creator/web/type_form_live.ex:107
+#, elixir-autogen, elixir-format
+msgid "Type saved."
+msgstr "Тип сохранён."
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:143
+#, elixir-autogen, elixir-format
+msgid "Type trashed. Its templates have also been moved to trash."
+msgstr "Тип перемещён в корзину. Его шаблоны также перемещены в корзину."
+
+#: lib/phoenix_kit_document_creator/web/categories_live.ex:261
+#, elixir-autogen, elixir-format
+msgid "Types"
+msgstr "Типы"
+
+#: lib/phoenix_kit_document_creator/web/components/create_document_modal.ex:177
+#, elixir-autogen, elixir-format, fuzzy
+msgid "selected"
+msgstr "удалённые"
