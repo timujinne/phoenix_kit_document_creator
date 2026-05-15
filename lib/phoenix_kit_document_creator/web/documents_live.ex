@@ -1610,20 +1610,17 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
     apply_category_update(socket, file_id, result)
   end
 
-  defp apply_category_update(socket, file_id, {:ok, updated}) do
-    templates = patch_template_category(socket.assigns.templates, file_id, updated.category)
-    {:noreply, assign(socket, templates: templates)}
+  defp apply_category_update(socket, _file_id, {:ok, _updated}) do
+    # Block E (Task 12) will replace this with a full taxonomy patch.
+    # For now, just return without crashing — the taxonomy update persisted
+    # to the DB; the file map returned by update_template_taxonomy/3 is
+    # string-keyed and does not carry a legacy :category atom key.
+    {:noreply, socket}
   end
 
   defp apply_category_update(socket, file_id, {:error, reason}) do
     Logger.error("Failed to set template category for #{file_id}: #{inspect(reason)}")
     {:noreply, assign(socket, error: gettext("Failed to update template category."))}
-  end
-
-  defp patch_template_category(templates, file_id, new_category) do
-    Enum.map(templates, fn t ->
-      if t["id"] == file_id, do: Map.put(t, "category", new_category), else: t
-    end)
   end
 
   defp build_known_file_ids(templates, documents, trashed_templates, trashed_documents) do

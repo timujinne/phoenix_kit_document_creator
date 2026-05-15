@@ -2040,7 +2040,7 @@ defmodule PhoenixKitDocumentCreator.Documents do
   Persists a named, reusable preset (template composition recipe).
 
   Required attrs: `:name`, `:created_by_uuid`. Optional: `:description`,
-  `:category`, `:scope_type`, `:scope_id`, `:sections`.
+  `:scope_type`, `:scope_id`, `:sections`.
   """
   @spec save_preset(map()) :: {:ok, TemplatePreset.t()} | {:error, Ecto.Changeset.t()}
   def save_preset(attrs) do
