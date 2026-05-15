@@ -281,15 +281,23 @@ defmodule PhoenixKitDocumentCreator.Documents do
       "folder_id" => record.folder_id
     }
 
-    # Templates have `language` (V110) and `category` columns; documents
-    # inherit language from their template at fill time and don't store either.
+    # Templates carry `language` (V110); both templates and documents carry
+    # `category_uuid` / `type_uuid` (V120). Presence-check each field so
+    # the helper works for any record shape (Template, Document, etc.).
     base
     |> then(fn m ->
       if Map.has_key?(record, :language), do: Map.put(m, "language", record.language), else: m
     end)
-    |> then(fn m ->
-      if Map.has_key?(record, :category), do: Map.put(m, "category", record.category), else: m
-    end)
+    |> maybe_put_field(record, :category_uuid, "category_uuid")
+    |> maybe_put_field(record, :type_uuid, "type_uuid")
+  end
+
+  defp maybe_put_field(map, record, field, key) do
+    if Map.has_key?(record, field) do
+      Map.put(map, key, Map.get(record, field))
+    else
+      map
+    end
   end
 
   # ===========================================================================
@@ -885,7 +893,8 @@ defmodule PhoenixKitDocumentCreator.Documents do
          target,
          opts
        ) do
-    template_uuid = get_template_uuid_by_google_doc_id(template_file_id)
+    source_template = get_template_by_google_doc_id(template_file_id)
+    template_uuid = source_template && source_template.uuid
 
     result =
       %Document{}
@@ -893,6 +902,8 @@ defmodule PhoenixKitDocumentCreator.Documents do
         name: doc_name,
         google_doc_id: new_doc_id,
         template_uuid: template_uuid,
+        category_uuid: source_template && source_template.category_uuid,
+        type_uuid: source_template && source_template.type_uuid,
         variable_values: variable_values,
         status: "published",
         path: target.path,
@@ -949,11 +960,12 @@ defmodule PhoenixKitDocumentCreator.Documents do
     {:ok, %{doc_id: new_doc_id, url: GoogleDocsClient.get_edit_url(new_doc_id)}}
   end
 
-  defp get_template_uuid_by_google_doc_id(google_doc_id) do
-    Template
-    |> where([t], t.google_doc_id == ^google_doc_id)
-    |> select([t], t.uuid)
-    |> repo().one()
+  defp get_template_by_google_doc_id(google_doc_id) do
+    repo().get_by(Template, google_doc_id: google_doc_id)
+  end
+
+  defp get_document_by_google_doc_id(google_doc_id) do
+    repo().get_by(Document, google_doc_id: google_doc_id)
   end
 
   defp docs_client do
@@ -1159,64 +1171,70 @@ defmodule PhoenixKitDocumentCreator.Documents do
   end
 
   @doc """
-  Set or clear the category for a template identified by `google_doc_id`.
-
-  Pass `nil` or `""` to clear the category. On success, logs a
-  `template.category_updated` activity row with `category_from`/`category_to`
-  metadata and broadcasts `:files_changed` so connected LiveViews resync.
-  On `{:error, changeset}`, logs a failed-mutation activity row (matching the
-  `update_template_language/3` pattern). Returns `{:error, :not_found}` when
-  no template row exists for `google_doc_id`.
-
-  Options: `:actor_uuid` — stored on the activity row.
+  Sets (or clears) the category and type of a template identified by
+  `google_doc_id`. `taxonomy` is a map with optional `:category_uuid`
+  and `:type_uuid` keys (`nil` clears). Logs a
+  `template.taxonomy_updated` activity row.
   """
-  @spec update_template_category(String.t(), String.t() | nil, keyword()) ::
-          {:ok, Template.t()} | {:error, :not_found | Ecto.Changeset.t()}
-  def update_template_category(google_doc_id, category, opts \\ [])
-      when is_binary(google_doc_id) do
-    normalized =
-      case category do
-        nil -> nil
-        "" -> nil
-        value when is_binary(value) -> value
-      end
-
-    case repo().get_by(Template, google_doc_id: google_doc_id) do
+  @spec update_template_taxonomy(String.t(), map(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def update_template_taxonomy(google_doc_id, taxonomy, _opts \\ []) do
+    case get_template_by_google_doc_id(google_doc_id) do
       nil ->
         {:error, :not_found}
 
-      %Template{category: previous} = template ->
+      template ->
+        attrs =
+          %{}
+          |> put_if_present(taxonomy, :category_uuid)
+          |> put_if_present(taxonomy, :type_uuid)
+
         template
-        |> Template.changeset(%{category: normalized})
+        |> Template.changeset(attrs)
         |> repo().update()
         |> case do
           {:ok, updated} ->
-            log_activity(%{
-              action: "template.category_updated",
-              mode: "manual",
-              actor_uuid: opts[:actor_uuid],
-              resource_type: "template",
-              resource_uuid: updated.uuid,
-              metadata: %{
-                "name" => updated.name,
-                "google_doc_id" => updated.google_doc_id,
-                "category_from" => previous,
-                "category_to" => updated.category
-              }
-            })
-
             broadcast_files_changed()
-            {:ok, updated}
+            {:ok, schema_to_file_map(updated)}
 
-          {:error, _changeset} = err ->
-            log_failed_mutation("template.category_updated", "template", opts, %{
-              "google_doc_id" => google_doc_id,
-              "category_to" => normalized
-            })
-
+          {:error, _} = err ->
             err
         end
     end
+  end
+
+  @doc "Like `update_template_taxonomy/3` but for a Document."
+  @spec update_document_taxonomy(String.t(), map(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def update_document_taxonomy(google_doc_id, taxonomy, _opts \\ []) do
+    case get_document_by_google_doc_id(google_doc_id) do
+      nil ->
+        {:error, :not_found}
+
+      document ->
+        attrs =
+          %{}
+          |> put_if_present(taxonomy, :category_uuid)
+          |> put_if_present(taxonomy, :type_uuid)
+
+        document
+        |> Document.changeset(attrs)
+        |> repo().update()
+        |> case do
+          {:ok, updated} ->
+            broadcast_files_changed()
+            {:ok, schema_to_file_map(updated)}
+
+          {:error, _} = err ->
+            err
+        end
+    end
+  end
+
+  defp put_if_present(attrs, source, key) do
+    if Map.has_key?(source, key),
+      do: Map.put(attrs, key, Map.get(source, key)),
+      else: attrs
   end
 
   defp register_existing(kind, attrs, opts) do
@@ -2030,17 +2048,15 @@ defmodule PhoenixKitDocumentCreator.Documents do
   end
 
   @doc """
-  Lists presets, optionally filtered by any combination of `:category`,
-  `:scope_type`, and `:scope_id`. Results are ordered by name ascending.
+  Lists presets, optionally filtered by `:scope_type` and `:scope_id`.
+  Results are ordered by name ascending.
   """
   @spec list_presets(%{
-          optional(:category) => String.t(),
           optional(:scope_type) => String.t(),
           optional(:scope_id) => String.t()
         }) :: [TemplatePreset.t()]
   def list_presets(filter \\ %{}) do
     TemplatePreset
-    |> maybe_filter(:category, filter[:category])
     |> maybe_filter(:scope_type, filter[:scope_type])
     |> maybe_filter(:scope_id, filter[:scope_id])
     |> order_by([p], asc: p.name)

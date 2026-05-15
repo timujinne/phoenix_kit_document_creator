@@ -1603,8 +1603,10 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
     end)
   end
 
-  defp do_set_template_category(socket, file_id, category) do
-    result = Documents.update_template_category(file_id, category, actor_opts(socket))
+  defp do_set_template_category(socket, file_id, _category) do
+    # Full taxonomy picker rework is in Block E (Task 11).
+    # For now, forward as a no-op taxonomy map so callers compile.
+    result = Documents.update_template_taxonomy(file_id, %{}, actor_opts(socket))
     apply_category_update(socket, file_id, result)
   end
 
