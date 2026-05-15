@@ -9,7 +9,12 @@ config :phoenix_kit_document_creator, PhoenixKitDocumentCreator.Test.Repo,
   username: System.get_env("PGUSER", "postgres"),
   password: System.get_env("PGPASSWORD", "postgres"),
   hostname: System.get_env("PGHOST", "localhost"),
-  database: "phoenix_kit_document_creator_test#{System.get_env("MIX_TEST_PARTITION")}",
+  port: String.to_integer(System.get_env("PGPORT", "5432")),
+  database:
+    System.get_env(
+      "PGDATABASE",
+      "phoenix_kit_document_creator_test#{System.get_env("MIX_TEST_PARTITION")}"
+    ),
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2
 
@@ -19,6 +24,10 @@ config :phoenix_kit, repo: PhoenixKitDocumentCreator.Test.Repo
 # Pin `PhoenixKit.Config.url_prefix/0` to "/" so route helpers don't try
 # to read the prefix from a missing settings table during LV mounts.
 config :phoenix_kit, url_prefix: "/"
+
+# Use the test PubSub server started by test_helper.exs so taxonomy
+# broadcasts don't crash with "unknown registry" errors.
+config :phoenix_kit, pubsub: PhoenixKit.PubSub
 
 # Test endpoint so `Phoenix.LiveViewTest` can drive `DocumentsLive` /
 # `GoogleOAuthSettingsLive` through `live/2`. Not what the host app
