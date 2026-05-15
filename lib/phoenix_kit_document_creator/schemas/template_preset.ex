@@ -7,7 +7,7 @@ defmodule PhoenixKitDocumentCreator.Schemas.TemplatePreset do
   document to produce a multi-section composition in one step.
 
   Presets are optionally scoped via `scope_type` + `scope_id` (e.g.
-  `"organization"` + org uuid) and optionally categorized for UI grouping.
+  `"organization"` + org uuid).
 
   The `sections` field is a JSONB array where each element is a map
   describing one section (keys: `template_uuid`, `position`,
