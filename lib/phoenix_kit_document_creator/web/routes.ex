@@ -10,13 +10,6 @@ defmodule PhoenixKitDocumentCreator.Web.Routes do
   def admin_locale_routes do
     quote do
       live(
-        "/admin/document-creator/categories",
-        PhoenixKitDocumentCreator.Web.CategoriesLive,
-        :index,
-        as: :doc_creator_categories_localized
-      )
-
-      live(
         "/admin/document-creator/categories/new",
         PhoenixKitDocumentCreator.Web.CategoryFormLive,
         :new,
@@ -49,13 +42,6 @@ defmodule PhoenixKitDocumentCreator.Web.Routes do
   @doc "Admin routes for the shared live_session (non-localized)."
   def admin_routes do
     quote do
-      live(
-        "/admin/document-creator/categories",
-        PhoenixKitDocumentCreator.Web.CategoriesLive,
-        :index,
-        as: :doc_creator_categories
-      )
-
       live(
         "/admin/document-creator/categories/new",
         PhoenixKitDocumentCreator.Web.CategoryFormLive,

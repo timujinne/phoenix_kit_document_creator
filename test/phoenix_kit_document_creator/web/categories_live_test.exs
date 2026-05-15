@@ -16,7 +16,10 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLiveTest do
     {:ok, _} = Taxonomy.create_type(%{name: "InvoiceType", category_uuid: cat.uuid})
     {:ok, view, _html} = live(conn, "/en/admin/document-creator/categories")
 
-    view |> element("[phx-value-uuid='#{cat.uuid}']") |> render_click()
+    view
+    |> element("button[phx-click='select_category'][phx-value-uuid='#{cat.uuid}']")
+    |> render_click()
+
     assert render(view) =~ "InvoiceType"
   end
 end
