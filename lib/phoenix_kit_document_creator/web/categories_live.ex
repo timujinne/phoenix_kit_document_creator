@@ -187,6 +187,8 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
       when is_list(uuids) do
     if socket.assigns.selected do
       Taxonomy.reorder_types(socket.assigns.selected.uuid, uuids, Helpers.actor_opts(socket))
+    else
+      Logger.warning("reorder_types fired with no selected category — ignoring")
     end
 
     {:noreply, reload_types(socket)}
@@ -430,7 +432,19 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
 
   defp reload_categories(socket) do
     opts = if socket.assigns.categories_trash, do: [status: "deleted"], else: []
-    assign(socket, categories: Taxonomy.list_categories(opts))
+    categories = Taxonomy.list_categories(opts)
+
+    # Re-sync `selected` against the freshly-loaded list so the right-column
+    # header does not drift after reorder, delete, or edit operations.
+    selected =
+      case socket.assigns.selected do
+        nil -> nil
+        %{uuid: uuid} -> Enum.find(categories, fn c -> c.uuid == uuid end)
+      end
+
+    socket
+    |> assign(categories: categories, selected: selected)
+    |> reload_types()
   end
 
   defp reload_types(socket) do

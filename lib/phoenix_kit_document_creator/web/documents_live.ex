@@ -406,7 +406,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
         "document" -> Documents.update_document_taxonomy(gid, taxonomy)
       end
 
-    {:noreply, apply_taxonomy_result(socket, result)}
+    {:noreply, apply_taxonomy_result(socket, result, :category)}
   end
 
   def handle_event(
@@ -423,7 +423,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
         "document" -> Documents.update_document_taxonomy(gid, taxonomy)
       end
 
-    {:noreply, apply_taxonomy_result(socket, result)}
+    {:noreply, apply_taxonomy_result(socket, result, :type)}
   end
 
   def handle_event("new_blank_document", _params, socket) do
@@ -1683,12 +1683,16 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
   defp blank_to_nil(""), do: nil
   defp blank_to_nil(v), do: v
 
-  defp apply_taxonomy_result(socket, {:ok, file_map}) do
+  defp apply_taxonomy_result(socket, {:ok, file_map}, _field) do
     patch_file_in_assigns(socket, file_map)
   end
 
-  defp apply_taxonomy_result(socket, {:error, _reason}) do
+  defp apply_taxonomy_result(socket, {:error, _reason}, :category) do
     assign(socket, error: gettext("Could not update category"))
+  end
+
+  defp apply_taxonomy_result(socket, {:error, _reason}, :type) do
+    assign(socket, error: gettext("Could not update type"))
   end
 
   defp patch_file_in_assigns(socket, %{"id" => file_id} = file_map) do

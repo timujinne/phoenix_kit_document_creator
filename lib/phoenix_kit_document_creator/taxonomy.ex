@@ -307,7 +307,7 @@ defmodule PhoenixKitDocumentCreator.Taxonomy do
           {:ok, Category.t()} | {:error, term()}
   def permanently_delete_category(%Category{} = category, opts \\ []) do
     case repo().delete(category) do
-      {:ok, deleted} = ok ->
+      {:ok, _} = ok ->
         log_activity(%{
           action: "doc_taxonomy.category.permanently_deleted",
           mode: "manual",
@@ -318,7 +318,6 @@ defmodule PhoenixKitDocumentCreator.Taxonomy do
         })
 
         broadcast(:category, category.uuid)
-        _ = deleted
         ok
 
       error ->
@@ -560,7 +559,7 @@ defmodule PhoenixKitDocumentCreator.Taxonomy do
           {:ok, Type.t()} | {:error, term()}
   def permanently_delete_type(%Type{} = type, opts \\ []) do
     case repo().delete(type) do
-      {:ok, deleted} = ok ->
+      {:ok, _} = ok ->
         log_activity(%{
           action: "doc_taxonomy.type.permanently_deleted",
           mode: "manual",
@@ -571,7 +570,6 @@ defmodule PhoenixKitDocumentCreator.Taxonomy do
         })
 
         broadcast(:type, type.uuid)
-        _ = deleted
         ok
 
       error ->
@@ -742,8 +740,6 @@ defmodule PhoenixKitDocumentCreator.Taxonomy do
   end
 
   defp fetch_cascade_uuids_from_activity(action, resource_uuid) do
-    import Ecto.Query, only: [from: 2]
-
     entry =
       from(e in PhoenixKit.Activity.Entry,
         where: e.action == ^action and e.resource_uuid == ^resource_uuid,
