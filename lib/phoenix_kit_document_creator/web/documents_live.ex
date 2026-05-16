@@ -1587,35 +1587,38 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
           {@type_name}
         </span>
       <% else %>
-        <%!-- Active view: interactive selects sourced from precomputed options --%>
-        <select
-          name="value"
-          class="select select-bordered select-xs"
+        <%!--
+          Active view: interactive selects sourced from precomputed options.
+          Each <select> is wrapped in its own <form> — phx-change is a form
+          binding, so a bare <select> outside a form does not serialize its
+          value (only the phx-value-* attrs would arrive).
+        --%>
+        <form
           phx-change="set_taxonomy_category"
           phx-value-google_doc_id={@file["id"]}
           phx-value-kind={if @is_template, do: "template", else: "document"}
-          title={gettext("Category")}
         >
-          <option value="">{gettext("No category")}</option>
-          <%= for {uuid, name} <- @cat_options do %>
-            <option value={uuid} selected={@file["category_uuid"] == uuid}>{name}</option>
-          <% end %>
-        </select>
+          <select name="value" class="select select-bordered select-xs" title={gettext("Category")}>
+            <option value="">{gettext("No category")}</option>
+            <%= for {uuid, name} <- @cat_options do %>
+              <option value={uuid} selected={@file["category_uuid"] == uuid}>{name}</option>
+            <% end %>
+          </select>
+        </form>
         <%!-- Type select — only shown when a category is chosen --%>
-        <select
+        <form
           :if={@file["category_uuid"]}
-          name="value"
-          class="select select-bordered select-xs"
           phx-change="set_taxonomy_type"
           phx-value-google_doc_id={@file["id"]}
           phx-value-kind={if @is_template, do: "template", else: "document"}
-          title={gettext("Type")}
         >
-          <option value="">{gettext("No type")}</option>
-          <%= for {uuid, name} <- @type_options do %>
-            <option value={uuid} selected={@file["type_uuid"] == uuid}>{name}</option>
-          <% end %>
-        </select>
+          <select name="value" class="select select-bordered select-xs" title={gettext("Type")}>
+            <option value="">{gettext("No type")}</option>
+            <%= for {uuid, name} <- @type_options do %>
+              <option value={uuid} selected={@file["type_uuid"] == uuid}>{name}</option>
+            <% end %>
+          </select>
+        </form>
       <% end %>
     </div>
     """
