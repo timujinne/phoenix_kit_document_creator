@@ -12,6 +12,7 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
   require Logger
 
   alias PhoenixKit.Utils.Routes
+  alias PhoenixKitDocumentCreator.Documents
   alias PhoenixKitDocumentCreator.Taxonomy
   alias PhoenixKitDocumentCreator.Web.Helpers
 
@@ -25,6 +26,7 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
        categories: [],
        selected: nil,
        types: [],
+       presets: [],
        categories_trash: false,
        types_trash: false
      )}
@@ -217,6 +219,31 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
     {:noreply, reload_types(socket)}
   end
 
+  # ── Preset events ─────────────────────────────────────────────────────────
+
+  def handle_event("delete_preset", %{"uuid" => uuid}, socket) do
+    case Documents.get_preset(uuid) do
+      nil ->
+        {:noreply,
+         socket
+         |> put_flash(:error, gettext("That preset no longer exists."))
+         |> reload_presets()}
+
+      preset ->
+        case Documents.delete_preset(preset) do
+          {:ok, _} ->
+            {:noreply,
+             socket
+             |> put_flash(:info, gettext("Preset deleted."))
+             |> reload_presets()}
+
+          {:error, reason} ->
+            Logger.error("delete_preset failed: #{inspect(reason)}")
+            {:noreply, put_flash(socket, :error, gettext("Could not delete preset."))}
+        end
+    end
+  end
+
   # ── Taxonomy broadcasts ────────────────────────────────────────────────────
 
   @impl true
@@ -382,6 +409,61 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
           </div>
         </div>
       </div>
+
+      <%= if @selected and not @categories_trash do %>
+        <div class="card bg-base-100 shadow-sm border border-base-200">
+          <div class="card-body p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h2 class="card-title text-base">{gettext("Presets")}</h2>
+              <a
+                href={Routes.path("/admin/document-creator/categories/#{@selected.uuid}/presets/new")}
+                class="btn btn-primary btn-xs"
+              >
+                <span class="hero-plus w-3 h-3" /> {gettext("New preset")}
+              </a>
+            </div>
+
+            <%= if @presets == [] do %>
+              <p class="text-sm text-base-content/50 py-4 text-center">
+                {gettext("No presets for this category yet.")}
+              </p>
+            <% else %>
+              <%= for {type_label, rows} <- group_presets_by_type(@presets, @types) do %>
+                <h3 class="text-sm font-semibold text-base-content/70 mt-3 mb-1">{type_label}</h3>
+                <ul class="flex flex-col gap-1">
+                  <%= for %{preset: preset, stale: stale} <- rows do %>
+                    <li class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-base-200">
+                      <span class="flex-1 text-sm font-medium">{preset.name}</span>
+                      <span
+                        :if={stale.broken_count > 0}
+                        class="badge badge-warning badge-sm gap-1"
+                        title={gettext("Sections reference missing or trashed templates")}
+                      >
+                        <span class="hero-exclamation-triangle w-3 h-3" />
+                        {ngettext(
+                          "%{count} broken template",
+                          "%{count} broken templates",
+                          stale.broken_count,
+                          count: stale.broken_count
+                        )}
+                      </span>
+                      <span class="text-xs text-base-content/50">
+                        {ngettext(
+                          "%{count} section",
+                          "%{count} sections",
+                          length(preset.sections),
+                          count: length(preset.sections)
+                        )}
+                      </span>
+                      <.preset_row_menu preset={preset} />
+                    </li>
+                  <% end %>
+                </ul>
+              <% end %>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
     </div>
     """
   end
@@ -458,6 +540,40 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
     """
   end
 
+  defp preset_row_menu(assigns) do
+    ~H"""
+    <div class="dropdown dropdown-end">
+      <button type="button" tabindex="0" class="btn btn-ghost btn-xs">
+        <span class="hero-ellipsis-horizontal w-4 h-4" />
+      </button>
+      <ul
+        tabindex="0"
+        class="dropdown-content menu bg-base-100 rounded-box z-10 w-40 p-1 shadow-sm border border-base-200"
+      >
+        <li>
+          <a
+            href={Routes.path("/admin/document-creator/presets/#{@preset.uuid}/edit")}
+            class="text-xs"
+          >
+            <span class="hero-pencil w-3 h-3" /> {gettext("Edit")}
+          </a>
+        </li>
+        <li>
+          <button
+            type="button"
+            phx-click="delete_preset"
+            phx-value-uuid={@preset.uuid}
+            data-confirm={gettext("Delete this preset permanently?")}
+            class="text-xs text-error"
+          >
+            <span class="hero-trash w-3 h-3" /> {gettext("Delete")}
+          </button>
+        </li>
+      </ul>
+    </div>
+    """
+  end
+
   # ── Private helpers ────────────────────────────────────────────────────────
 
   # Looks the category up by uuid and runs `fun` with it. If the row is gone
@@ -507,13 +623,53 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
   end
 
   defp reload_types(socket) do
+    socket =
+      case socket.assigns.selected do
+        nil ->
+          assign(socket, types: [])
+
+        category ->
+          opts = if socket.assigns.types_trash, do: [status: "deleted"], else: []
+          assign(socket, types: Taxonomy.list_types_for_category(category.uuid, opts))
+      end
+
+    reload_presets(socket)
+  end
+
+  defp reload_presets(socket) do
     case socket.assigns.selected do
       nil ->
-        assign(socket, types: [])
+        assign(socket, presets: [])
 
       category ->
-        opts = if socket.assigns.types_trash, do: [status: "deleted"], else: []
-        assign(socket, types: Taxonomy.list_types_for_category(category.uuid, opts))
+        presets =
+          %{scope_id: category.uuid}
+          |> Documents.list_presets()
+          |> Enum.map(fn preset ->
+            %{preset: preset, stale: Documents.preset_stale_info(preset)}
+          end)
+
+        assign(socket, presets: presets)
     end
+  end
+
+  # Groups preset rows by their `scope_type` (a Type uuid). Untyped presets
+  # come last under a localized "Untyped" heading.
+  defp group_presets_by_type(presets, types) do
+    type_name = Map.new(types, fn t -> {t.uuid, t.name} end)
+
+    presets
+    |> Enum.group_by(fn %{preset: p} -> p.scope_type end)
+    |> Enum.map(fn {type_uuid, rows} ->
+      label =
+        if type_uuid,
+          do: Map.get(type_name, type_uuid, gettext("Unknown type")),
+          else: gettext("Untyped")
+
+      sort_key = if type_uuid, do: {0, label}, else: {1, ""}
+      {sort_key, label, rows}
+    end)
+    |> Enum.sort_by(fn {sort_key, _, _} -> sort_key end)
+    |> Enum.map(fn {_, label, rows} -> {label, rows} end)
   end
 end

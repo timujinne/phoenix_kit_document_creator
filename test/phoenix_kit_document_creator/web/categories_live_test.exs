@@ -1,7 +1,7 @@
 defmodule PhoenixKitDocumentCreator.Web.CategoriesLiveTest do
   use PhoenixKitDocumentCreator.LiveCase
 
-  alias PhoenixKitDocumentCreator.Taxonomy
+  alias PhoenixKitDocumentCreator.{Documents, Taxonomy}
 
   test "lists existing categories", %{conn: conn} do
     conn = put_test_scope(conn, fake_scope())
@@ -21,5 +21,30 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLiveTest do
     |> render_click()
 
     assert render(view) =~ "InvoiceType"
+  end
+
+  describe "presets panel" do
+    test "lists presets of the selected category and deletes one", %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, cat} = Taxonomy.create_category(%{name: "Legal"})
+
+      {:ok, preset} =
+        Documents.save_preset(%{
+          name: "Standard",
+          scope_id: cat.uuid,
+          created_by_uuid: Ecto.UUID.generate()
+        })
+
+      {:ok, view, _} = live(conn, "/en/admin/document-creator/categories")
+      view |> element("button", "Legal") |> render_click()
+
+      assert render(view) =~ "Standard"
+
+      view
+      |> element(~s{button[phx-value-uuid="#{preset.uuid}"][phx-click="delete_preset"]})
+      |> render_click()
+
+      assert Documents.list_presets(%{scope_id: cat.uuid}) == []
+    end
   end
 end
