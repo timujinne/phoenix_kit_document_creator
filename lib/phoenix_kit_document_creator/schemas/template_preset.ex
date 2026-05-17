@@ -6,14 +6,21 @@ defmodule PhoenixKitDocumentCreator.Schemas.TemplatePreset do
   position, variable defaults, image params) that can be applied to a new
   document to produce a multi-section composition in one step.
 
-  Presets are optionally scoped via `scope_type` + `scope_id` (e.g.
-  `"organization"` + org uuid).
+  ## Scope convention (Stage 1, no migration)
+
+  Presets are associated with the document taxonomy by repurposing the
+  generic scope pair:
+
+    * `scope_id`   — owning Category uuid (always set for managed presets)
+    * `scope_type` — owning Type uuid, or `nil` for category-wide presets
+
+  A future migration will replace this with real `category_uuid` /
+  `type_uuid` foreign keys (see the design spec).
 
   The `sections` field is a JSONB array where each element is a map
   describing one section (keys: `template_uuid`, `position`,
   `variable_values`, `image_params`). Image substitution is restricted to
-  PNG, JPEG, and GIF formats; enforcement happens at the context layer
-  (Task 7+).
+  PNG, JPEG, and GIF formats; enforcement happens at the context layer.
   """
 
   use Ecto.Schema
