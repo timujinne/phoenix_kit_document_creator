@@ -51,6 +51,57 @@ defmodule PhoenixKitDocumentCreator.Web.PresetFormLiveTest do
       assert Documents.list_presets(%{scope_id: cat.uuid}) |> hd() |> Map.get(:name) ==
                "Renamed"
     end
+
+    test "preserves the original created_by_uuid on edit", %{conn: conn, cat: cat} do
+      conn = put_test_scope(conn, fake_scope())
+      original_author = Ecto.UUID.generate()
+
+      {:ok, preset} =
+        Documents.save_preset(%{
+          name: "Old",
+          scope_id: cat.uuid,
+          created_by_uuid: original_author
+        })
+
+      {:ok, view, _} =
+        live(conn, "/en/admin/document-creator/presets/#{preset.uuid}/edit")
+
+      view |> form("form", preset: %{name: "Renamed"}) |> render_submit()
+
+      assert Documents.get_preset(preset.uuid).created_by_uuid == original_author
+    end
+
+    test "keeps a section referencing a non-published template", %{conn: conn, cat: cat} do
+      conn = put_test_scope(conn, fake_scope())
+
+      {:ok, tmpl} =
+        Template.changeset(
+          %Template{},
+          %{
+            name: "Trashed",
+            google_doc_id: "gd-trashed",
+            status: "trashed",
+            category_uuid: cat.uuid
+          }
+        )
+        |> Repo.insert()
+
+      {:ok, preset} =
+        Documents.save_preset(%{
+          name: "WithBroken",
+          scope_id: cat.uuid,
+          created_by_uuid: Ecto.UUID.generate(),
+          sections: [%{"template_uuid" => tmpl.uuid, "position" => 0}]
+        })
+
+      {:ok, view, _} =
+        live(conn, "/en/admin/document-creator/presets/#{preset.uuid}/edit")
+
+      view |> form("form", preset: %{name: "WithBroken"}) |> render_submit()
+
+      assert [%{"template_uuid" => uuid}] = Documents.get_preset(preset.uuid).sections
+      assert uuid == tmpl.uuid
+    end
   end
 
   describe "section editor" do

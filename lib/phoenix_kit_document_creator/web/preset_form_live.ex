@@ -140,7 +140,7 @@ defmodule PhoenixKitDocumentCreator.Web.PresetFormLive do
     |> Map.put("scope_type", type_uuid)
     |> Map.put_new(
       "created_by_uuid",
-      Helpers.actor_uuid(socket) || socket.assigns.preset.created_by_uuid
+      socket.assigns.preset.created_by_uuid || Helpers.actor_uuid(socket)
     )
   end
 
@@ -268,6 +268,16 @@ defmodule PhoenixKitDocumentCreator.Web.PresetFormLive do
                         {tmpl.name}
                       </option>
                     <% end %>
+                    <option
+                      :if={
+                        section["template_uuid"] &&
+                          !Enum.any?(@templates, &(&1.uuid == section["template_uuid"]))
+                      }
+                      value={section["template_uuid"]}
+                      selected
+                    >
+                      {gettext("(missing or trashed template)")}
+                    </option>
                   </select>
                   <span
                     :if={
