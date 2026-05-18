@@ -304,6 +304,8 @@ defmodule PhoenixKitDocumentCreator.Documents do
     end)
     |> maybe_put_field(record, :category_uuid, "category_uuid")
     |> maybe_put_field(record, :type_uuid, "type_uuid")
+    |> maybe_put_field(record, :created_by_uuid, "created_by_uuid")
+    |> maybe_put_field(record, :inserted_at, "inserted_at")
   end
 
   defp maybe_put_field(map, record, field, key) do
@@ -1794,6 +1796,35 @@ defmodule PhoenixKitDocumentCreator.Documents do
 
       {:error, _} = err ->
         err
+    end
+  end
+
+  @doc """
+  Rename a document: updates its name in Google Drive and in the local DB.
+
+  Validates that `new_name` is non-blank (reuses `Document.changeset/2`'s
+  length validation). Returns `{:ok, %Document{}}` on success or
+  `{:error, term()}` on failure (including `{:error, :not_found}` and
+  `{:error, :blank_name}`).
+  """
+  @spec rename_document(binary(), String.t()) :: {:ok, Document.t()} | {:error, term()}
+  def rename_document(uuid, new_name) when is_binary(uuid) and is_binary(new_name) do
+    if String.trim(new_name) == "" do
+      {:error, :blank_name}
+    else
+      case repo().get(Document, uuid) do
+        nil ->
+          {:error, :not_found}
+
+        document ->
+          with :ok <- docs_client().rename_file(document.google_doc_id, new_name),
+               {:ok, updated} <-
+                 document
+                 |> Document.changeset(%{name: new_name})
+                 |> repo().update() do
+            {:ok, updated}
+          end
+      end
     end
   end
 

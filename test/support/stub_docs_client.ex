@@ -109,6 +109,16 @@ defmodule PhoenixKitDocumentCreator.Test.StubDocsClient do
     end
   end
 
+  def rename_file(file_id, _new_name) do
+    record({:rename_file, file_id})
+
+    case override_for(:rename_file) do
+      nil -> :ok
+      :ok -> :ok
+      {:error, _} = err -> err
+    end
+  end
+
   # Passthrough for any function not intercepted (e.g. get_document_text
   # used by the real append_template — not needed since we stub at this level).
   def get_document_text(_doc_id), do: {:ok, ""}
@@ -178,5 +188,10 @@ defmodule PhoenixKitDocumentCreator.Test.StubDocsClientHelpers do
   @doc "Stub delete_document to return an error."
   def stub_delete_document_error!(error) do
     StubDocsClient.add_override(:delete_document, {:error, error})
+  end
+
+  @doc "Stub rename_file to return an error."
+  def stub_rename_file_error!(error) do
+    StubDocsClient.add_override(:rename_file, {:error, error})
   end
 end

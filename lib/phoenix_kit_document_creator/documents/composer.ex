@@ -144,7 +144,7 @@ defmodule PhoenixKitDocumentCreator.Documents.Composer do
          ranges = Map.put(appended, first.position, base_range),
          {:ok, _} <- apply_substitutions(gdoc_id, sorted_sections, ranges, client) do
       insert_result =
-        insert_document_and_sections(gdoc_id, sorted_sections, created_by, name, repo)
+        insert_document_and_sections(gdoc_id, sorted_sections, created_by, name, opts, repo)
 
       case insert_result do
         {:ok, doc} ->
@@ -159,7 +159,9 @@ defmodule PhoenixKitDocumentCreator.Documents.Composer do
     end
   end
 
-  defp insert_document_and_sections(gdoc_id, sorted_sections, created_by, name, repo) do
+  defp insert_document_and_sections(gdoc_id, sorted_sections, created_by, name, opts, repo) do
+    category_uuid = Keyword.get(opts, :category_uuid)
+
     Multi.new()
     |> Multi.insert(:document, fn _ ->
       Document.changeset(%Document{}, %{
@@ -167,7 +169,8 @@ defmodule PhoenixKitDocumentCreator.Documents.Composer do
         google_doc_id: gdoc_id,
         # legacy column not used for composed docs; nullable in DB
         template_uuid: nil,
-        created_by_uuid: created_by
+        created_by_uuid: created_by,
+        category_uuid: category_uuid
       })
     end)
     |> Multi.run(:sections, fn _, %{document: doc} ->
