@@ -251,7 +251,10 @@ defmodule PhoenixKitDocumentCreator.Integration.DriveBoundActionsTest do
 
       TestRepo.update!(
         Document.changeset(doc, %{
-          data: %{"deleted" => %{"at" => "2025-01-01T00:00:00Z", "by_uuid" => actor_uuid}}
+          data: %{
+            "deleted" => %{"at" => "2025-01-01T00:00:00Z", "by_uuid" => actor_uuid},
+            "recipe" => "preserved"
+          }
         })
       )
 
@@ -262,6 +265,7 @@ defmodule PhoenixKitDocumentCreator.Integration.DriveBoundActionsTest do
 
       record = TestRepo.get_by!(Document, google_doc_id: file_id)
       refute Map.has_key?(record.data, "deleted")
+      assert record.data["recipe"] == "preserved"
     end
   end
 
@@ -274,7 +278,10 @@ defmodule PhoenixKitDocumentCreator.Integration.DriveBoundActionsTest do
 
       TestRepo.update!(
         Template.changeset(tpl, %{
-          data: %{"deleted" => %{"at" => "2025-01-01T00:00:00Z", "by_uuid" => actor_uuid}}
+          data: %{
+            "deleted" => %{"at" => "2025-01-01T00:00:00Z", "by_uuid" => actor_uuid},
+            "recipe" => "preserved"
+          }
         })
       )
 
@@ -285,6 +292,7 @@ defmodule PhoenixKitDocumentCreator.Integration.DriveBoundActionsTest do
 
       record = TestRepo.get_by!(Template, google_doc_id: file_id)
       refute Map.has_key?(record.data, "deleted")
+      assert record.data["recipe"] == "preserved"
     end
   end
 

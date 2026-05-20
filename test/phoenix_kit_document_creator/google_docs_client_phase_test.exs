@@ -75,7 +75,7 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClientPhaseTest do
   # ---------------------------------------------------------------------------
 
   describe "list_image_inserts/3 with columns >= 2" do
-    test "produces deleteContentRange + insertTable, no insertInlineImage" do
+    test "produces exactly one deleteContentRange + one insertTable, no insertInlineImage" do
       fill = %{
         kind: :image_list,
         columns: 2,
@@ -87,12 +87,19 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClientPhaseTest do
       fills = %{"grid" => fill}
       requests = GoogleDocsClient.build_image_batch_requests(ranges, fills, 468.0)
 
-      # Overall delete for the slot (from build_image_batch_requests), then
-      # table_image_inserts also emits a deleteContentRange + insertTable.
-      # The slot-level delete comes from build_image_batch_requests itself;
-      # list_image_inserts for columns>=2 returns delete+insertTable directly.
+      # build_image_batch_requests/3 emits the deleteContentRange (atom keys).
+      # list_image_inserts for columns>=2 emits ONLY insertTable (string keys).
+      # There must be exactly ONE deleteContentRange — a second one would be
+      # zero-width (startIndex == endIndex) and rejected by the Google Docs API.
+      delete_count =
+        Enum.count(requests, fn r ->
+          Map.has_key?(r, :deleteContentRange) or Map.has_key?(r, "deleteContentRange")
+        end)
+
+      assert delete_count == 1, "expected exactly 1 deleteContentRange, got #{delete_count}"
       assert Enum.any?(requests, &Map.has_key?(&1, "insertTable"))
       refute Enum.any?(requests, &Map.has_key?(&1, :insertInlineImage))
+      refute Enum.any?(requests, &Map.has_key?(&1, "insertInlineImage"))
     end
 
     test "insertTable has correct row count ceil(media / columns)" do

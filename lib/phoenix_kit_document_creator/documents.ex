@@ -1698,7 +1698,13 @@ defmodule PhoenixKitDocumentCreator.Documents do
     from(t in Template,
       where: t.google_doc_id == ^google_doc_id,
       update: [
-        set: [data: fragment("data || jsonb_build_object('deleted', ?::jsonb)", ^deleted_entry)]
+        set: [
+          data:
+            fragment(
+              "COALESCE(data, '{}'::jsonb) || jsonb_build_object('deleted', ?::jsonb)",
+              ^deleted_entry
+            )
+        ]
       ]
     )
     |> repo().update_all([])
@@ -1706,7 +1712,13 @@ defmodule PhoenixKitDocumentCreator.Documents do
     from(d in Document,
       where: d.google_doc_id == ^google_doc_id,
       update: [
-        set: [data: fragment("data || jsonb_build_object('deleted', ?::jsonb)", ^deleted_entry)]
+        set: [
+          data:
+            fragment(
+              "COALESCE(data, '{}'::jsonb) || jsonb_build_object('deleted', ?::jsonb)",
+              ^deleted_entry
+            )
+        ]
       ]
     )
     |> repo().update_all([])
@@ -1795,13 +1807,13 @@ defmodule PhoenixKitDocumentCreator.Documents do
   defp clear_deleted_data(google_doc_id) do
     from(t in Template,
       where: t.google_doc_id == ^google_doc_id,
-      update: [set: [data: fragment("data - 'deleted'")]]
+      update: [set: [data: fragment("COALESCE(data, '{}'::jsonb) - 'deleted'")]]
     )
     |> repo().update_all([])
 
     from(d in Document,
       where: d.google_doc_id == ^google_doc_id,
-      update: [set: [data: fragment("data - 'deleted'")]]
+      update: [set: [data: fragment("COALESCE(data, '{}'::jsonb) - 'deleted'")]]
     )
     |> repo().update_all([])
   end

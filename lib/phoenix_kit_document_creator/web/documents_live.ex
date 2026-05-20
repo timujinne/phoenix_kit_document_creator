@@ -1227,10 +1227,17 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
   # Collect distinct by_uuid values from trashed files and resolve them to
   # display names in one query. Returns a %{uuid => display_name} map.
   defp build_deleted_by_names(files) do
-    files
-    |> extract_deleted_by_uuids()
-    |> Auth.get_users_by_uuids()
-    |> Map.new(&{&1.uuid, user_display_name(&1)})
+    uuids = extract_deleted_by_uuids(files)
+
+    case uuids do
+      [] ->
+        %{}
+
+      _ ->
+        uuids
+        |> Auth.get_users_by_uuids()
+        |> Map.new(&{&1.uuid, user_display_name(&1)})
+    end
   end
 
   defp extract_deleted_by_uuids(files) do

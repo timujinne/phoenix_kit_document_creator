@@ -1035,18 +1035,26 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   defp list_image_inserts(%{media: []}, _index, _content_width_pt), do: []
 
   # Column-aware path: dispatch on columns count.
-  # columns >= 2 → table creation requests (Phase 1 of two-phase insertion).
+  # columns >= 2 → insertTable only. The outer build_image_batch_requests/3
+  #   already emits the deleteContentRange for the placeholder; emitting
+  #   another one here would produce a zero-width (invalid) delete that the
+  #   Google Docs API rejects with INVALID_ARGUMENT.
   # columns == 1 → inline inserts using content-width-based PT width.
   defp list_image_inserts(fill, index, content_width_pt) do
     cols = Map.get(fill, :columns, 1)
 
     if cols >= 2 do
-      placeholder = %{start_index: index, end_index: index}
+      rows = (length(fill.media) / cols) |> Float.ceil() |> trunc() |> max(1)
 
-      table_image_inserts(placeholder, fill.media, %{
-        columns: cols,
-        content_width_pt: content_width_pt
-      })
+      [
+        %{
+          "insertTable" => %{
+            "rows" => rows,
+            "columns" => cols,
+            "location" => %{"index" => index}
+          }
+        }
+      ]
     else
       w_pt = image_width_for_columns(content_width_pt, 1)
       inline_image_inserts_pt(fill, index, w_pt)
@@ -1598,41 +1606,62 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
         (table_ranges ++ inline_ranges)
         |> build_image_batch_requests(fills_map, content_width_pt)
 
+      # Snapshot pre-existing table start_indices from doc2 before Phase 1 so
+      # Phase 2 can identify the newly inserted tables by set-difference.
+      pre_existing_table_starts =
+        doc2 |> collect_tables() |> MapSet.new(& &1["table"]["startIndex"])
+
       with {:ok, _} <- maybe_batch(&batch_update/2, doc_id, phase1_requests) do
         if table_ranges == [] do
           :ok
         else
-          do_fill_table_cells(doc_id, table_ranges, fills_map, content_width_pt)
+          do_fill_table_cells(
+            doc_id,
+            table_ranges,
+            fills_map,
+            content_width_pt,
+            pre_existing_table_starts
+          )
         end
       end
     end
   end
 
-  # Phase 2: re-fetch the doc after table creation, locate the new tables, and
-  # fill their cells with images.
-  defp do_fill_table_cells(doc_id, table_ranges, fills_map, content_width_pt) do
+  # Phase 2: re-fetch the doc after table creation, locate the new tables by
+  # set-difference against pre-existing table start_indices, and fill cells.
+  #
+  # Using "last K tables" would fail when the document has pre-existing tables
+  # at indices below the placeholder positions — Phase 1 inserts shift those
+  # pre-existing tables to higher indices, making them the "last K" instead of
+  # the newly created ones.
+  defp do_fill_table_cells(
+         doc_id,
+         table_ranges,
+         fills_map,
+         content_width_pt,
+         pre_existing_table_starts
+       ) do
     with {:ok, %{body: doc3}} <- get_document(doc_id) do
-      # Count pre-existing tables in doc2 is unnecessary — instead we rely on
-      # document order: table_ranges sorted asc by original start_index correspond
-      # one-to-one with the newly inserted tables in document order.
-      table_slots_asc =
-        Enum.sort_by(table_ranges, & &1.start_index, :asc)
+      table_slots_asc = Enum.sort_by(table_ranges, & &1.start_index, :asc)
 
-      all_tables = collect_tables(doc3)
+      # Newly inserted tables are those whose start_index was not present in
+      # doc2, sorted ascending so they match table_slots_asc in document order.
+      new_tables =
+        doc3
+        |> collect_tables()
+        |> Enum.reject(fn el ->
+          MapSet.member?(pre_existing_table_starts, el["table"]["startIndex"])
+        end)
+        |> Enum.sort_by(fn el -> el["table"]["startIndex"] end, :asc)
 
-      if length(all_tables) < length(table_slots_asc) do
+      if length(new_tables) != length(table_slots_asc) do
         Logger.warning(
-          "substitute_all_images: expected #{length(table_slots_asc)} tables " <>
-            "but found #{length(all_tables)} in doc #{doc_id}; skipping Phase 2"
+          "substitute_all_images: expected #{length(table_slots_asc)} new tables " <>
+            "but found #{length(new_tables)} in doc #{doc_id}; skipping Phase 2"
         )
 
         :ok
       else
-        # Take the LAST K tables (the newly inserted ones appear in document order
-        # matching the ascending-sorted table_slots).
-        k = length(table_slots_asc)
-        new_tables = Enum.take(all_tables, -k)
-
         phase2_requests =
           Enum.zip(table_slots_asc, new_tables)
           |> Enum.flat_map(fn {%{name: name}, table_el} ->
