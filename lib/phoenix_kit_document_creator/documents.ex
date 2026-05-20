@@ -195,6 +195,7 @@ defmodule PhoenixKitDocumentCreator.Documents do
     |> Enum.map(fn
       {"default_width_px", v} -> {"default_width_px", parse_integer(v)}
       {"max_count", v} -> {"max_count", parse_integer_or_nil(v)}
+      {"columns", v} -> {"columns", parse_columns(v)}
       {k, v} -> {k, v}
     end)
     |> Enum.reject(fn {_k, v} -> v == :skip end)
@@ -224,6 +225,21 @@ defmodule PhoenixKitDocumentCreator.Documents do
   end
 
   defp parse_integer_or_nil(_), do: :skip
+
+  @max_columns 4
+
+  # Parses a columns value, clamping to 1..@max_columns.  Falls back to 1 on
+  # invalid input so callers always get a usable integer (never :skip).
+  defp parse_columns(v) when is_integer(v), do: max(1, min(v, @max_columns))
+
+  defp parse_columns(v) when is_binary(v) do
+    case Integer.parse(v) do
+      {n, _} -> max(1, min(n, @max_columns))
+      _ -> 1
+    end
+  end
+
+  defp parse_columns(_), do: 1
 
   @doc "List templates from the local DB. Returns maps compatible with the LiveView."
   @spec list_templates_from_db() :: [map()]
@@ -1885,22 +1901,58 @@ defmodule PhoenixKitDocumentCreator.Documents do
 
   Fetches the current document text via the Google Docs client and extracts
   all `{{ image: name }}` / `{{ images: name }}` tags, returning a list of
-  `%{name: String.t(), kind: :image | :image_list}` maps sorted by name.
+  `%{name: String.t(), kind: :image | :image_list, config: map()}` maps sorted
+  by name.
+
+  The `:config` map is sourced from the saved variable in `template.variables`
+  (if present); otherwise it falls back to `Variable.default_image_config(kind)`.
 
   Returns `{:error, :not_found}` if no template exists for the given UUID.
   """
   @spec image_slots_for_template(UUIDv7.t()) ::
-          {:ok, [%{name: String.t(), kind: :image | :image_list}]}
+          {:ok, [%{name: String.t(), kind: :image | :image_list, config: map()}]}
           | {:error, :not_found | term()}
   def image_slots_for_template(template_uuid) do
     case repo().get(Template, template_uuid) do
-      nil ->
-        {:error, :not_found}
+      nil -> {:error, :not_found}
+      template -> fetch_slots_for_template(template)
+    end
+  end
 
-      template ->
-        with {:ok, text} <- docs_client().get_document_text(template.google_doc_id) do
-          {:ok, PhoenixKitDocumentCreator.Variable.extract_image_variables(text)}
-        end
+  defp fetch_slots_for_template(template) do
+    with {:ok, text} <- docs_client().get_document_text(template.google_doc_id) do
+      vars = template.variables || []
+
+      slots =
+        text
+        |> PhoenixKitDocumentCreator.Variable.extract_image_variables()
+        |> Enum.map(fn %{name: name, kind: kind} = slot ->
+          Map.put(slot, :config, resolve_slot_config(vars, name, kind))
+        end)
+
+      {:ok, slots}
+    end
+  end
+
+  # Looks up the saved variable config for a slot by name. Falls back to the
+  # kind-specific default when no saved variable is found or it has no config.
+  defp resolve_slot_config(variables, name, kind) do
+    saved_config =
+      case Enum.find(variables, &(&1["name"] == name)) do
+        nil -> nil
+        var -> var["config"]
+      end
+
+    # Stringify atom keys from the default so the merged map is uniformly
+    # string-keyed. Saved configs from the DB jsonb column are already
+    # string-keyed; the default has atom keys.
+    string_default =
+      PhoenixKitDocumentCreator.Variable.default_image_config(kind)
+      |> Map.new(fn {k, v} -> {to_string(k), v} end)
+
+    case saved_config do
+      nil -> string_default
+      config when is_map(config) -> Map.merge(string_default, config)
     end
   end
 
