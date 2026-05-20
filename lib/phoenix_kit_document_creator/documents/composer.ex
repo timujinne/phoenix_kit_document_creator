@@ -108,10 +108,27 @@ defmodule PhoenixKitDocumentCreator.Documents.Composer do
       sorted = Enum.sort_by(sections, & &1.position)
       templates_by_uuid = Map.new(templates, &{&1.uuid, &1})
 
+      # If every selected template shares the same non-nil type_uuid, propagate
+      # it to the composed document so the documents UI can show the type
+      # alongside the category. Mixed-type compositions → nil.
+      opts = Keyword.put_new(opts, :type_uuid, common_type_uuid(templates_by_uuid, sorted))
+
       case run_multi(sorted, templates_by_uuid, created_by, name, opts) do
         {:ok, %{document: doc}} -> {:ok, doc}
         {:error, _} = err -> err
       end
+    end
+  end
+
+  defp common_type_uuid(templates_by_uuid, sorted_sections) do
+    sorted_sections
+    |> Enum.map(&Map.get(templates_by_uuid, &1.template_uuid))
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map(& &1.type_uuid)
+    |> Enum.uniq()
+    |> case do
+      [single] when not is_nil(single) -> single
+      _ -> nil
     end
   end
 
@@ -161,6 +178,7 @@ defmodule PhoenixKitDocumentCreator.Documents.Composer do
 
   defp insert_document_and_sections(gdoc_id, sorted_sections, created_by, name, opts, repo) do
     category_uuid = Keyword.get(opts, :category_uuid)
+    type_uuid = Keyword.get(opts, :type_uuid)
 
     data = Keyword.get(opts, :data, %{})
 
@@ -173,6 +191,7 @@ defmodule PhoenixKitDocumentCreator.Documents.Composer do
         template_uuid: nil,
         created_by_uuid: created_by,
         category_uuid: category_uuid,
+        type_uuid: type_uuid,
         data: data
       })
     end)
