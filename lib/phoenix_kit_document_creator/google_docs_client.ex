@@ -1609,7 +1609,7 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
       # Snapshot pre-existing table start_indices from doc2 before Phase 1 so
       # Phase 2 can identify the newly inserted tables by set-difference.
       pre_existing_table_starts =
-        doc2 |> collect_tables() |> MapSet.new(& &1["table"]["startIndex"])
+        doc2 |> collect_tables() |> MapSet.new(& &1["startIndex"])
 
       with {:ok, _} <- maybe_batch(&batch_update/2, doc_id, phase1_requests) do
         if table_ranges == [] do
@@ -1650,9 +1650,9 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
         doc3
         |> collect_tables()
         |> Enum.reject(fn el ->
-          MapSet.member?(pre_existing_table_starts, el["table"]["startIndex"])
+          MapSet.member?(pre_existing_table_starts, el["startIndex"])
         end)
-        |> Enum.sort_by(fn el -> el["table"]["startIndex"] end, :asc)
+        |> Enum.sort_by(fn el -> el["startIndex"] end, :asc)
 
       if length(new_tables) != length(table_slots_asc) do
         Logger.warning(
