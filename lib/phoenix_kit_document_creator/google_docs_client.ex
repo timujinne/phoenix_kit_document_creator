@@ -885,6 +885,37 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   # Google rejects with `INVALID_ARGUMENT` (`google.apps.docs.v1.Unit`), so every
   # `insertInlineImage` batch failed.
   @px_to_pt 0.75
+  @image_gap_pt 8.0
+  @default_content_width_pt 468.0
+  @max_columns 4
+
+  @doc """
+  Page content width in points = pageSize.width − marginLeft − marginRight.
+  Falls back to 468pt (US Letter with 1" margins) if anything is missing.
+  """
+  def content_width_pt(document) when is_map(document) do
+    ds = Map.get(document, "documentStyle") || %{}
+    width = magnitude(get_in(ds, ["pageSize", "width"]))
+    margin_l = magnitude(Map.get(ds, "marginLeft")) || 72.0
+    margin_r = magnitude(Map.get(ds, "marginRight")) || 72.0
+
+    case width do
+      nil -> @default_content_width_pt
+      w -> w - margin_l - margin_r
+    end
+  end
+
+  defp magnitude(%{"magnitude" => m}) when is_number(m), do: m * 1.0
+  defp magnitude(_), do: nil
+
+  @doc """
+  Per-image width in points for N columns sharing `content_width_pt`.
+  """
+  def image_width_for_columns(content_width_pt, columns)
+      when is_number(content_width_pt) do
+    n = columns |> max(1) |> min(@max_columns)
+    (content_width_pt - @image_gap_pt * (n - 1)) / n
+  end
 
   @doc """
   Builds the list of `batchUpdate` request maps to substitute image tags.
