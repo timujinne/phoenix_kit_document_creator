@@ -929,8 +929,7 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
 
     [
       %{"deleteContentRange" => %{"range" => %{"startIndex" => s, "endIndex" => e}}},
-      %{"insertTable" => %{"rows" => rows, "columns" => cols,
-                           "location" => %{"index" => s}}}
+      %{"insertTable" => %{"rows" => rows, "columns" => cols, "location" => %{"index" => s}}}
     ]
   end
 
@@ -949,9 +948,11 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
       src_w = Map.get(media_item, :width_px) || Map.get(media_item, "width_px")
       src_h = Map.get(media_item, :height_px) || Map.get(media_item, "height_px")
 
-      # scale_height works on any consistent unit; using PT values directly
-      # preserves the aspect ratio. When src dimensions are absent it falls
-      # back to w_pt (a square), which the API will then scale to fit.
+      # scale_height mixes units here: target is PT, src dims are PX. The
+      # resulting height is w_pt * (h_px / w_px), which is numerically in PT
+      # because the PX ratio cancels. Google Docs renders the correct aspect;
+      # absolute height value is not in PT when src dims are absent (falls back
+      # to w_pt, a square).
       scaled_h_pt = scale_height(w_pt, src_w, src_h) || w_pt
 
       %{
