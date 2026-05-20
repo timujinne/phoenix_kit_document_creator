@@ -12,6 +12,8 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
   require Logger
 
   import PhoenixKitDocumentCreator.Web.Components.CreateDocumentModal
+  import PhoenixKitWeb.Components.Core.Pagination
+  import PhoenixKitWeb.Components.Core.TableDefault
 
   alias PhoenixKit.Users.Auth
   alias PhoenixKitDocumentCreator.Documents
@@ -24,6 +26,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
   @pubsub_topic PhoenixKitDocumentCreator.Documents.pubsub_topic()
   @refresh_cooldown_ms :timer.seconds(5)
   @max_pdf_push_bytes 5_000_000
+  @per_page 20
 
   @impl true
   def mount(_params, _session, socket) do
@@ -54,6 +57,8 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
        trashed_documents: [],
        known_file_ids: MapSet.new(),
        status_mode: "active",
+       page: 1,
+       filters: %{"category" => "", "type" => "", "lang" => "", "sub_status" => "", "q" => ""},
        pending_files: MapSet.new(),
        thumbnails: %{},
        enabled_languages: [],
@@ -83,7 +88,34 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
       end
 
     url_path = URI.parse(uri).path || "/"
-    socket = assign(socket, page_title: title, url_path: url_path)
+
+    page =
+      case Integer.parse(Map.get(params, "page", "1")) do
+        {n, ""} when n >= 1 -> n
+        _ -> 1
+      end
+
+    view_mode = Map.get(params, "view", socket.assigns.view_mode)
+    status_mode = Map.get(params, "status", socket.assigns.status_mode)
+
+    filters = %{
+      "category" => Map.get(params, "category", ""),
+      "type" => Map.get(params, "type", ""),
+      "lang" => Map.get(params, "lang", ""),
+      "sub_status" => Map.get(params, "sub_status", ""),
+      "q" => params |> Map.get("q", "") |> String.trim()
+    }
+
+    socket =
+      assign(socket,
+        page_title: title,
+        url_path: url_path,
+        page: page,
+        view_mode: view_mode,
+        status_mode: status_mode,
+        filters: filters
+      )
+
     {:noreply, apply_media_selection(params, socket)}
   end
 
@@ -347,12 +379,35 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
 
   @impl true
   def handle_event("switch_view", %{"mode" => mode}, socket) do
-    {:noreply, assign(socket, view_mode: mode)}
+    {:noreply, push_patch(socket, to: list_path_with_params(socket, %{"view" => mode}))}
   end
 
   def handle_event("switch_status", %{"mode" => mode}, socket)
       when mode in ["active", "trashed"] do
-    {:noreply, assign(socket, status_mode: mode)}
+    {:noreply,
+     push_patch(socket, to: list_path_with_params(socket, %{"status" => mode, "page" => "1"}))}
+  end
+
+  def handle_event("filter", filter_params, socket) do
+    old_category = socket.assigns.filters["category"]
+    new_category = Map.get(filter_params, "category", "")
+
+    # Clear type selection when category changes to avoid stale cross-category filter
+    new_type =
+      if old_category != new_category, do: "", else: Map.get(filter_params, "type", "")
+
+    new_filters =
+      socket.assigns.filters
+      |> Map.put("category", new_category)
+      |> Map.put("type", new_type)
+      |> Map.put("lang", Map.get(filter_params, "lang", ""))
+      |> Map.put("sub_status", Map.get(filter_params, "sub_status", ""))
+      |> Map.put("q", filter_params |> Map.get("q", "") |> String.trim())
+
+    {:noreply,
+     push_patch(socket,
+       to: list_path_with_params(socket, Map.put(new_filters, "page", "1"))
+     )}
   end
 
   # ── Create actions ───────────────────────────────────────────────
@@ -974,6 +1029,69 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
               <% end %>
             <% end %>
           </div>
+          <%!-- Filters --%>
+          <% filter_cats = Taxonomy.list_categories() %>
+          <% filter_types =
+            case @filters["category"] do
+              "" ->
+                filter_cats
+                |> Enum.flat_map(fn cat ->
+                  cat.uuid
+                  |> Taxonomy.list_types_for_category()
+                  |> Enum.map(&{&1.uuid, &1.name})
+                end)
+
+              cat_uuid ->
+                cat_uuid
+                |> Taxonomy.list_types_for_category()
+                |> Enum.map(&{&1.uuid, &1.name})
+            end %>
+          <form phx-change="filter" class="flex items-center gap-2 flex-shrink-0">
+            <input
+              type="search"
+              name="q"
+              value={@filters["q"] || ""}
+              phx-debounce="300"
+              class="input input-sm input-bordered"
+              placeholder={gettext("Search by name…")}
+            />
+            <select name="category" class="select select-sm">
+              <option value="">{gettext("All Categories")}</option>
+              <%= for cat <- filter_cats do %>
+                <option value={cat.uuid} selected={@filters["category"] == cat.uuid}>
+                  {cat.name}
+                </option>
+              <% end %>
+            </select>
+            <select name="type" class="select select-sm">
+              <option value="">{gettext("All Types")}</option>
+              <%= for {uuid, name} <- filter_types do %>
+                <option value={uuid} selected={@filters["type"] == uuid}>{name}</option>
+              <% end %>
+            </select>
+            <%= if @live_action == :templates and @enabled_languages != [] do %>
+              <select name="lang" class="select select-sm">
+                <option value="">{gettext("All Languages")}</option>
+                <%= for lang <- @enabled_languages do %>
+                  <option value={lang.code} selected={@filters["lang"] == lang.code}>
+                    {lang.name}
+                  </option>
+                <% end %>
+              </select>
+            <% end %>
+            <select name="sub_status" class="select select-sm">
+              <option value="">{gettext("All Statuses")}</option>
+              <option value="published" selected={@filters["sub_status"] == "published"}>
+                {gettext("Published")}
+              </option>
+              <option value="lost" selected={@filters["sub_status"] == "lost"}>
+                {gettext("Lost")}
+              </option>
+              <option value="unfiled" selected={@filters["sub_status"] == "unfiled"}>
+                {gettext("Unfiled")}
+              </option>
+            </select>
+          </form>
           <div class="flex gap-1 flex-shrink-0">
             <button
               class={"btn btn-ghost btn-sm btn-square #{if @view_mode == "cards", do: "btn-active"}"}
@@ -1062,7 +1180,30 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
               {_, "trashed"} -> @trashed_documents
               {_, _} -> @documents
             end %>
-          {render_file_grid(assign_files(assigns, files_for_mode))}
+          <% filtered_files = filter_files(files_for_mode, @filters) %>
+          <% total_count = length(filtered_files) %>
+          <% total_pages = max(1, ceil(total_count / per_page())) %>
+          <% current_page = min(@page, total_pages) %>
+          <% paged_files =
+            filtered_files
+            |> Enum.drop((current_page - 1) * per_page())
+            |> Enum.take(per_page()) %>
+          <% list_base =
+            if @live_action == :templates,
+              do: PhoenixKitDocumentCreator.Paths.templates(),
+              else: PhoenixKitDocumentCreator.Paths.documents() %>
+          <% pagination_params =
+            @filters
+            |> Map.put("view", @view_mode)
+            |> Map.put("status", @status_mode)
+            |> Map.filter(fn {_k, v} -> v != "" end) %>
+          {render_file_grid(assign_files(assigns, paged_files))}
+          <.pagination
+            current_page={current_page}
+            total_pages={total_pages}
+            base_path={list_base}
+            params={pagination_params}
+          />
         <% end %>
       <% end %>
     </div>
@@ -1279,46 +1420,206 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
       </div>
     </div>
 
-    <%= if @view_mode == "cards" do %>
-      <div
-        :if={@files != []}
-        class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"
-      >
+    <.table_default
+      :if={@files != []}
+      id="documents-table"
+      items={@files}
+      view_mode={if @view_mode == "cards", do: "card", else: "table"}
+      show_toggle={false}
+      variant="default"
+      size="sm"
+      wrapper_class="overflow-x-auto"
+      card_class={
+        fn file ->
+          [
+            "group flex flex-col card bg-base-100 relative",
+            MapSet.member?(@pending_files, file["id"]) && "opacity-40 pointer-events-none"
+          ]
+          |> Enum.reject(&(&1 in [nil, false, ""]))
+          |> Enum.join(" ")
+        end
+      }
+      item_id={& &1["id"]}
+      class="table-sm"
+    >
+      <%!-- Card-grid sizing: doc_creator uses 2/3/4/5-col grid (denser than the core
+           default 1/2/3/4). Override via Tailwind utility wrapper around the grid. --%>
+      <:card_media :let={file}>
         <div
-          :for={file <- @files}
-          class={"group flex flex-col card bg-base-100 relative #{if MapSet.member?(@pending_files, file["id"]), do: "opacity-40 pointer-events-none"}"}
-          style="border: 1.5px solid currentColor; border-radius: 8px; overflow: hidden; padding-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.3);"
+          :if={MapSet.member?(@pending_files, file["id"])}
+          class="absolute inset-0 z-10 flex items-center justify-center pointer-events-none"
         >
-          <div
-            :if={MapSet.member?(@pending_files, file["id"])}
-            class="absolute inset-0 z-10 flex items-center justify-center pointer-events-none"
-          >
-            <span class="loading loading-spinner loading-lg text-base-content opacity-100" />
+          <span class="loading loading-spinner loading-lg text-base-content opacity-100" />
+        </div>
+        <a
+          href={GoogleDocsClient.get_edit_url(file["id"])}
+          target="_blank"
+          style="display:flex;justify-content:center;padding:16px 16px 24px 16px;background:oklch(var(--color-base-200));"
+        >
+          {render_thumbnail(%{thumbnail: @thumbnails[file["id"]]})}
+        </a>
+      </:card_media>
+      <:card_body :let={file}>
+        <div class="p-3 flex-1 flex flex-col">
+          <div class="flex items-center gap-1.5">
+            <a
+              href={GoogleDocsClient.get_edit_url(file["id"])}
+              target="_blank"
+              class="font-medium text-sm truncate link link-hover"
+            >
+              {file["name"]}
+            </a>
+            <span
+              :if={file["status"] == "lost"}
+              class="badge badge-warning badge-xs"
+              title={gettext("File not found in Google Drive")}
+            >
+              {gettext("lost")}
+            </span>
+            <button
+              :if={file["status"] == "unfiled"}
+              type="button"
+              class="badge badge-info badge-xs cursor-pointer"
+              phx-click="open_unfiled_actions"
+              phx-value-id={file["id"]}
+              phx-value-name={file["name"]}
+              phx-value-path={file["path"] || ""}
+              title={
+                gettext("File exists in Drive but is outside the configured Document Creator folders")
+              }
+            >
+              {gettext("unfiled")}
+            </button>
           </div>
-          <%!-- Preview --%>
-          <a
-            href={GoogleDocsClient.get_edit_url(file["id"])}
-            target="_blank"
-            style="display:flex;justify-content:center;padding:16px 16px 24px 16px;background:oklch(var(--color-base-200));"
+          <div class="flex flex-wrap gap-1">
+            {render_language_picker(%{
+              file: file,
+              is_template: @is_template,
+              enabled_languages: @enabled_languages,
+              status_mode: @status_mode
+            })}
+            {render_category_picker(%{
+              file: file,
+              is_template: @is_template,
+              status_mode: @status_mode,
+              category_names: @category_names,
+              cat_options: @cat_options,
+              types_by_category: @types_by_category,
+              type_names: @type_names
+            })}
+          </div>
+          <p :if={file["modifiedTime"]} class="text-xs text-base-content/40 mt-auto pt-2">
+            {gettext("Updated:")} {format_time(file["modifiedTime"])}
+          </p>
+          <p :if={file["inserted_at"]} class="text-xs text-base-content/40 pt-0.5">
+            {gettext("Created:")} {format_time(file["inserted_at"])}
+          </p>
+          <p :if={@status_mode == "trashed"} class="text-xs text-base-content/40 pt-1">
+            <span class="hero-trash w-3 h-3 inline-block align-middle" />
+            {format_deleted_info(file["data"]["deleted"], @deleted_by_names)}
+          </p>
+        </div>
+        <div class="flex gap-1 px-2 pb-2 pt-1">
+          <%= if @status_mode == "trashed" do %>
+            <a
+              href={GoogleDocsClient.get_edit_url(file["id"])}
+              target="_blank"
+              class="flex-1 btn btn-ghost btn-xs py-2"
+            >
+              <span class="hero-eye w-3 h-3" /> {gettext("View")}
+            </a>
+          <% else %>
+            <a
+              href={GoogleDocsClient.get_edit_url(file["id"])}
+              target="_blank"
+              class="flex-1 btn btn-ghost btn-xs py-2"
+            >
+              <span class="hero-pencil-square w-3 h-3" /> {gettext("Edit")}
+            </a>
+          <% end %>
+          <button
+            class="flex-1 btn btn-ghost btn-xs py-2"
+            phx-click="export_pdf"
+            phx-value-id={file["id"]}
+            phx-value-name={file["name"]}
+            phx-disable-with={gettext("Exporting…")}
           >
-            {render_thumbnail(%{thumbnail: @thumbnails[file["id"]]})}
-          </a>
-
-          <%!-- Info --%>
-          <div class="p-3 flex-1 flex flex-col">
-            <div class="flex items-center gap-1.5">
-              <a
-                href={GoogleDocsClient.get_edit_url(file["id"])}
-                target="_blank"
-                class="font-medium text-sm truncate link link-hover"
-              >
-                {file["name"]}
-              </a>
-              <span
-                :if={file["status"] == "lost"}
-                class="badge badge-warning badge-xs"
-                title={gettext("File not found in Google Drive")}
-              >
+            <span class="hero-arrow-down-tray w-3 h-3" /> {gettext("PDF")}
+          </button>
+          <%= if @status_mode == "trashed" do %>
+            <button
+              class="btn btn-ghost btn-xs py-2 text-success"
+              phx-click="restore"
+              phx-value-id={file["id"]}
+              title={gettext("Restore")}
+              phx-disable-with={gettext("Restoring…")}
+            >
+              <span class="hero-arrow-uturn-left w-3 h-3" />
+            </button>
+          <% else %>
+            <button
+              class="btn btn-ghost btn-xs py-2 text-error"
+              phx-click="delete"
+              phx-value-id={file["id"]}
+              phx-disable-with={gettext("Deleting…")}
+            >
+              <span class="hero-trash w-3 h-3" />
+            </button>
+          <% end %>
+        </div>
+      </:card_body>
+      <.table_default_header>
+        <.table_default_row>
+          <.table_default_header_cell>{gettext("Name")}</.table_default_header_cell>
+          <.table_default_header_cell>{gettext("Status")}</.table_default_header_cell>
+          <.table_default_header_cell :if={@status_mode == "trashed"}>
+            {gettext("Deleted")}
+          </.table_default_header_cell>
+          <.table_default_header_cell>{gettext("Created")}</.table_default_header_cell>
+          <.table_default_header_cell>{gettext("Modified")}</.table_default_header_cell>
+          <.table_default_header_cell class="text-right">
+            {gettext("Actions")}
+          </.table_default_header_cell>
+        </.table_default_row>
+      </.table_default_header>
+      <.table_default_body>
+        <.table_default_row :for={file <- @files} hover={false} class="hover:bg-base-200/50">
+          <%= if MapSet.member?(@pending_files, file["id"]) do %>
+            <.table_default_cell
+              colspan={if @status_mode == "trashed", do: 6, else: 5}
+              class="text-center py-6"
+            >
+              <span class="loading loading-spinner loading-sm text-base-content/40" />
+            </.table_default_cell>
+          <% else %>
+            <.table_default_cell>
+              <div class="flex items-center gap-2">
+                <a
+                  href={GoogleDocsClient.get_edit_url(file["id"])}
+                  target="_blank"
+                  class="font-medium link link-hover"
+                >
+                  {file["name"]}
+                </a>
+                {render_language_picker(%{
+                  file: file,
+                  is_template: @is_template,
+                  enabled_languages: @enabled_languages,
+                  status_mode: @status_mode
+                })}
+                {render_category_picker(%{
+                  file: file,
+                  is_template: @is_template,
+                  status_mode: @status_mode,
+                  category_names: @category_names,
+                  cat_options: @cat_options,
+                  types_by_category: @types_by_category,
+                  type_names: @type_names
+                })}
+              </div>
+            </.table_default_cell>
+            <.table_default_cell>
+              <span :if={file["status"] == "lost"} class="badge badge-warning badge-xs">
                 {gettext("lost")}
               </span>
               <button
@@ -1337,215 +1638,78 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
               >
                 {gettext("unfiled")}
               </button>
-            </div>
-            <div class="flex flex-wrap gap-1">
-              {render_language_picker(%{
-                file: file,
-                is_template: @is_template,
-                enabled_languages: @enabled_languages,
-                status_mode: @status_mode
-              })}
-              {render_category_picker(%{
-                file: file,
-                is_template: @is_template,
-                status_mode: @status_mode,
-                category_names: @category_names,
-                cat_options: @cat_options,
-                types_by_category: @types_by_category,
-                type_names: @type_names
-              })}
-            </div>
-            <p :if={file["modifiedTime"]} class="text-xs text-base-content/40 mt-auto pt-2">
-              {format_time(file["modifiedTime"])}
-            </p>
-            <p :if={@status_mode == "trashed"} class="text-xs text-base-content/40 pt-1">
-              <span class="hero-trash w-3 h-3 inline-block align-middle" />
-              {format_deleted_info(file["data"]["deleted"], @deleted_by_names)}
-            </p>
-          </div>
-
-          <%!-- Actions --%>
-          <div class="flex gap-1 px-2 pb-2 pt-1">
-            <%= if @status_mode == "trashed" do %>
-              <a
-                href={GoogleDocsClient.get_edit_url(file["id"])}
-                target="_blank"
-                class="flex-1 btn btn-ghost btn-xs py-2"
-              >
-                <span class="hero-eye w-3 h-3" /> {gettext("View")}
-              </a>
-            <% else %>
-              <a
-                href={GoogleDocsClient.get_edit_url(file["id"])}
-                target="_blank"
-                class="flex-1 btn btn-ghost btn-xs py-2"
-              >
-                <span class="hero-pencil-square w-3 h-3" /> {gettext("Edit")}
-              </a>
-            <% end %>
-            <button
-              class="flex-1 btn btn-ghost btn-xs py-2"
-              phx-click="export_pdf"
-              phx-value-id={file["id"]}
-              phx-value-name={file["name"]}
-              phx-disable-with={gettext("Exporting…")}
+            </.table_default_cell>
+            <.table_default_cell
+              :if={@status_mode == "trashed"}
+              class="text-base-content/60 text-nowrap text-xs"
             >
-              <span class="hero-arrow-down-tray w-3 h-3" /> {gettext("PDF")}
-            </button>
-            <%= if @status_mode == "trashed" do %>
-              <button
-                class="btn btn-ghost btn-xs py-2 text-success"
-                phx-click="restore"
-                phx-value-id={file["id"]}
-                title={gettext("Restore")}
-                phx-disable-with={gettext("Restoring…")}
-              >
-                <span class="hero-arrow-uturn-left w-3 h-3" />
-              </button>
-            <% else %>
-              <button
-                class="btn btn-ghost btn-xs py-2 text-error"
-                phx-click="delete"
-                phx-value-id={file["id"]}
-                phx-disable-with={gettext("Deleting…")}
-              >
-                <span class="hero-trash w-3 h-3" />
-              </button>
-            <% end %>
-          </div>
-        </div>
-      </div>
-    <% else %>
-      <div :if={@files != []} class="overflow-x-auto">
-        <table class="table table-sm">
-          <thead>
-            <tr>
-              <th>{gettext("Name")}</th>
-              <th>{gettext("Status")}</th>
-              <th :if={@status_mode == "trashed"}>{gettext("Deleted")}</th>
-              <th>{gettext("Modified")}</th>
-              <th class="text-right">{gettext("Actions")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr :for={file <- @files} class="hover:bg-base-200/50">
-              <%= if MapSet.member?(@pending_files, file["id"]) do %>
-                <td colspan={if @status_mode == "trashed", do: 5, else: 4} class="text-center py-6">
-                  <span class="loading loading-spinner loading-sm text-base-content/40" />
-                </td>
-              <% else %>
-              <td>
-                <div class="flex items-center gap-2">
+              {format_deleted_info(file["data"]["deleted"], @deleted_by_names)}
+            </.table_default_cell>
+            <.table_default_cell class="text-base-content/60 text-nowrap text-xs">
+              {format_time(file["inserted_at"])}
+            </.table_default_cell>
+            <.table_default_cell class="text-base-content/60 text-nowrap">
+              {format_time(file["modifiedTime"])}
+            </.table_default_cell>
+            <.table_default_cell class="text-right">
+              <div class="flex gap-1 justify-end">
+                <%= if @status_mode == "trashed" do %>
                   <a
                     href={GoogleDocsClient.get_edit_url(file["id"])}
                     target="_blank"
-                    class="font-medium link link-hover"
+                    class="btn btn-ghost btn-xs"
+                    title={gettext("View")}
                   >
-                    {file["name"]}
+                    <span class="hero-eye w-3.5 h-3.5" />
                   </a>
-                  {render_language_picker(%{
-                    file: file,
-                    is_template: @is_template,
-                    enabled_languages: @enabled_languages,
-                    status_mode: @status_mode
-                  })}
-                  {render_category_picker(%{
-                    file: file,
-                    is_template: @is_template,
-                    status_mode: @status_mode,
-                    category_names: @category_names,
-                    cat_options: @cat_options,
-                    types_by_category: @types_by_category,
-                    type_names: @type_names
-                  })}
-                </div>
-              </td>
-              <td>
-                <span :if={file["status"] == "lost"} class="badge badge-warning badge-xs">
-                  {gettext("lost")}
-                </span>
+                <% else %>
+                  <a
+                    href={GoogleDocsClient.get_edit_url(file["id"])}
+                    target="_blank"
+                    class="btn btn-ghost btn-xs"
+                    title={gettext("Edit")}
+                  >
+                    <span class="hero-pencil-square w-3.5 h-3.5" />
+                  </a>
+                <% end %>
                 <button
-                  :if={file["status"] == "unfiled"}
-                  type="button"
-                  class="badge badge-info badge-xs cursor-pointer"
-                  phx-click="open_unfiled_actions"
+                  class="btn btn-ghost btn-xs"
+                  phx-click="export_pdf"
                   phx-value-id={file["id"]}
                   phx-value-name={file["name"]}
-                  phx-value-path={file["path"] || ""}
-                  title={
-                    gettext(
-                      "File exists in Drive but is outside the configured Document Creator folders"
-                    )
-                  }
+                  title={gettext("Export PDF")}
+                  phx-disable-with={gettext("Exporting…")}
                 >
-                  {gettext("unfiled")}
+                  <span class="hero-arrow-down-tray w-3.5 h-3.5" />
                 </button>
-              </td>
-              <td :if={@status_mode == "trashed"} class="text-base-content/60 text-nowrap text-xs">
-                {format_deleted_info(file["data"]["deleted"], @deleted_by_names)}
-              </td>
-              <td class="text-base-content/60 text-nowrap">{format_time(file["modifiedTime"])}</td>
-              <td class="text-right">
-                <div class="flex gap-1 justify-end">
-                  <%= if @status_mode == "trashed" do %>
-                    <a
-                      href={GoogleDocsClient.get_edit_url(file["id"])}
-                      target="_blank"
-                      class="btn btn-ghost btn-xs"
-                      title={gettext("View")}
-                    >
-                      <span class="hero-eye w-3.5 h-3.5" />
-                    </a>
-                  <% else %>
-                    <a
-                      href={GoogleDocsClient.get_edit_url(file["id"])}
-                      target="_blank"
-                      class="btn btn-ghost btn-xs"
-                      title={gettext("Edit")}
-                    >
-                      <span class="hero-pencil-square w-3.5 h-3.5" />
-                    </a>
-                  <% end %>
+                <%= if @status_mode == "trashed" do %>
                   <button
-                    class="btn btn-ghost btn-xs"
-                    phx-click="export_pdf"
+                    class="btn btn-ghost btn-xs text-success gap-1"
+                    phx-click="restore"
                     phx-value-id={file["id"]}
-                    phx-value-name={file["name"]}
-                    title={gettext("Export PDF")}
-                    phx-disable-with={gettext("Exporting…")}
+                    title={gettext("Restore")}
+                    phx-disable-with={gettext("Restoring…")}
                   >
-                    <span class="hero-arrow-down-tray w-3.5 h-3.5" />
+                    <span class="hero-arrow-uturn-left w-3.5 h-3.5" />
+                    <span class="text-xs">{gettext("Restore")}</span>
                   </button>
-                  <%= if @status_mode == "trashed" do %>
-                    <button
-                      class="btn btn-ghost btn-xs text-success gap-1"
-                      phx-click="restore"
-                      phx-value-id={file["id"]}
-                      title={gettext("Restore")}
-                      phx-disable-with={gettext("Restoring…")}
-                    >
-                      <span class="hero-arrow-uturn-left w-3.5 h-3.5" />
-                      <span class="text-xs">{gettext("Restore")}</span>
-                    </button>
-                  <% else %>
-                    <button
-                      class="btn btn-ghost btn-xs text-error"
-                      phx-click="delete"
-                      phx-value-id={file["id"]}
-                      title={gettext("Delete")}
-                      phx-disable-with={gettext("Deleting…")}
-                    >
-                      <span class="hero-trash w-3.5 h-3.5" />
-                    </button>
-                  <% end %>
-                </div>
-              </td>
-              <% end %>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    <% end %>
+                <% else %>
+                  <button
+                    class="btn btn-ghost btn-xs text-error"
+                    phx-click="delete"
+                    phx-value-id={file["id"]}
+                    title={gettext("Delete")}
+                    phx-disable-with={gettext("Deleting…")}
+                  >
+                    <span class="hero-trash w-3.5 h-3.5" />
+                  </button>
+                <% end %>
+              </div>
+            </.table_default_cell>
+          <% end %>
+        </.table_default_row>
+      </.table_default_body>
+    </.table_default>
     """
   end
 
@@ -1709,15 +1873,90 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
 
   # ── Helpers ─────────────────────────────────────────────────────────
 
+  defp per_page, do: @per_page
+
+  defp list_base_path(%{assigns: %{live_action: :templates}}),
+    do: PhoenixKitDocumentCreator.Paths.templates()
+
+  defp list_base_path(_socket),
+    do: PhoenixKitDocumentCreator.Paths.documents()
+
+  defp list_path_with_params(socket, extra_params) do
+    assigns = socket.assigns
+
+    base_params = %{
+      "view" => assigns.view_mode,
+      "status" => assigns.status_mode,
+      "page" => to_string(assigns.page),
+      "category" => assigns.filters["category"],
+      "type" => assigns.filters["type"],
+      "lang" => assigns.filters["lang"],
+      "sub_status" => assigns.filters["sub_status"]
+    }
+
+    params =
+      base_params
+      |> Map.merge(Map.new(extra_params, fn {k, v} -> {to_string(k), to_string(v)} end))
+      |> Map.reject(fn {_k, v} -> v == "" or is_nil(v) end)
+
+    base = list_base_path(socket)
+
+    if params == %{} do
+      base
+    else
+      "#{base}?#{URI.encode_query(params)}"
+    end
+  end
+
+  defp filter_files(files, filters) do
+    files
+    |> then(fn f ->
+      case filters["category"] do
+        v when v in [nil, ""] -> f
+        cat_uuid -> Enum.filter(f, &(&1["category_uuid"] == cat_uuid))
+      end
+    end)
+    |> then(fn f ->
+      case filters["type"] do
+        v when v in [nil, ""] -> f
+        type_uuid -> Enum.filter(f, &(&1["type_uuid"] == type_uuid))
+      end
+    end)
+    |> then(fn f ->
+      case filters["lang"] do
+        v when v in [nil, ""] -> f
+        lang -> Enum.filter(f, &(&1["language"] == lang))
+      end
+    end)
+    |> then(fn f ->
+      case filters["sub_status"] do
+        v when v in [nil, ""] -> f
+        status -> Enum.filter(f, &(&1["status"] == status))
+      end
+    end)
+    |> filter_by_name(filters["q"])
+  end
+
+  defp filter_by_name(files, q) when q in [nil, ""], do: files
+
+  defp filter_by_name(files, q) do
+    q_lower = String.downcase(q)
+    Enum.filter(files, &String.contains?(String.downcase(&1["name"] || ""), q_lower))
+  end
+
   defp settings_path, do: PhoenixKitDocumentCreator.Paths.settings()
   defp templates_folder_url, do: Documents.templates_folder_url()
   defp documents_folder_url, do: Documents.documents_folder_url()
 
   defp format_time(nil), do: ""
 
+  defp format_time(%DateTime{} = dt) do
+    Calendar.strftime(dt, "%b %d, %Y %H:%M")
+  end
+
   defp format_time(iso_string) when is_binary(iso_string) do
     case DateTime.from_iso8601(iso_string) do
-      {:ok, dt, _} -> Calendar.strftime(dt, "%b %d, %Y")
+      {:ok, dt, _} -> Calendar.strftime(dt, "%b %d, %Y %H:%M")
       _ -> iso_string
     end
   end
@@ -1732,7 +1971,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
 
     formatted_at =
       case DateTime.from_iso8601(at_iso) do
-        {:ok, dt, _} -> Calendar.strftime(dt, "%b %d, %Y")
+        {:ok, dt, _} -> Calendar.strftime(dt, "%b %d, %Y %H:%M")
         _ -> at_iso
       end
 
