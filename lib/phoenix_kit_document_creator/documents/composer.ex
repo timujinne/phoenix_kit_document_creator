@@ -154,25 +154,35 @@ defmodule PhoenixKitDocumentCreator.Documents.Composer do
         folder_id -> [destination_folder_id: folder_id]
       end
 
-    with {:ok, gdoc_id} <- client.copy_document(first_template.google_doc_id, copy_opts),
-         # Capture section 0's range before any appends — indices shift after each append.
-         {:ok, base_range} <- client.document_content_range(gdoc_id),
-         {:ok, appended} <- append_sections(gdoc_id, rest, by_uuid, client),
-         ranges = Map.put(appended, first.position, base_range),
-         {:ok, _} <- apply_substitutions(gdoc_id, sorted_sections, ranges, client) do
-      insert_result =
-        insert_document_and_sections(gdoc_id, sorted_sections, created_by, name, opts, repo)
+    # Track gdoc_id across the with-chain so a failure AFTER copy_document but
+    # BEFORE/AT apply_substitutions can clean up the orphan Drive file.
+    case client.copy_document(first_template.google_doc_id, copy_opts) do
+      {:ok, gdoc_id} ->
+        with {:ok, base_range} <- client.document_content_range(gdoc_id),
+             {:ok, appended} <- append_sections(gdoc_id, rest, by_uuid, client),
+             ranges = Map.put(appended, first.position, base_range),
+             {:ok, _} <- apply_substitutions(gdoc_id, sorted_sections, ranges, client) do
+          insert_result =
+            insert_document_and_sections(gdoc_id, sorted_sections, created_by, name, opts, repo)
 
-      case insert_result do
-        {:ok, doc} ->
-          {:ok, %{document: doc}}
+          case insert_result do
+            {:ok, doc} ->
+              {:ok, %{document: doc}}
 
-        {:error, reason} ->
-          best_effort_delete(gdoc_id, client)
-          {:error, reason}
-      end
-    else
-      {:error, reason} -> {:error, reason}
+            {:error, reason} ->
+              best_effort_delete(gdoc_id, client)
+              {:error, reason}
+          end
+        else
+          {:error, reason} ->
+            # Compose pipeline failed AFTER the Drive copy was created — delete
+            # the orphan so it doesn't linger with the temp "composed-doc-*" name.
+            best_effort_delete(gdoc_id, client)
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
