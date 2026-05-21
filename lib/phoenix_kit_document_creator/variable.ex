@@ -160,5 +160,12 @@ defmodule PhoenixKitDocumentCreator.Variable do
   def default_image_config(:image), do: %{default_width_px: 400, opacity: 1.0, z_index: 0}
 
   def default_image_config(:image_list),
-    do: %{default_width_px: 400, opacity: 1.0, z_index: 0, separator: :newline, max_count: nil}
+    do: %{
+      default_width_px: 400,
+      opacity: 1.0,
+      z_index: 0,
+      separator: :newline,
+      max_count: nil,
+      columns: 1
+    }
 end

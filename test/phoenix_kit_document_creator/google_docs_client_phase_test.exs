@@ -152,21 +152,28 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClientPhaseTest do
 
       requests = GoogleDocsClient.build_image_batch_requests(ranges, fills, 468.0)
 
-      # logo (higher start_index) processed first (desc order)
-      logo_requests =
-        Enum.take_while(requests, fn r ->
-          not (Map.has_key?(r, "deleteContentRange") and
-                 get_in(r, ["deleteContentRange", "range", "startIndex"]) == 50)
+      # logo (higher start_index) processed first (desc order); gallery second.
+      # Verify exactly one deleteContentRange per slot (two slots → two deletes total).
+      total_deletes =
+        Enum.count(requests, fn r ->
+          Map.has_key?(r, :deleteContentRange) or Map.has_key?(r, "deleteContentRange")
         end)
 
-      gallery_requests = requests -- logo_requests
+      assert total_deletes == 2, "expected exactly 2 deleteContentRange (one per slot)"
 
-      # logo slot: atom-key delete + atom-key insert
-      assert Enum.any?(logo_requests, &match?(%{deleteContentRange: _}, &1))
-      assert Enum.any?(logo_requests, &match?(%{insertInlineImage: _}, &1))
+      # logo slot: atom-key delete + atom-key inline insert
+      assert Enum.any?(requests, &match?(%{deleteContentRange: %{range: %{startIndex: 100}}}, &1))
+      assert Enum.any?(requests, &match?(%{insertInlineImage: %{location: %{index: 100}}}, &1))
 
-      # gallery slot: string-key table requests
-      assert Enum.any?(gallery_requests, &Map.has_key?(&1, "insertTable"))
+      # gallery slot: atom-key delete (from outer loop) + string-key insertTable only
+      assert Enum.any?(requests, &match?(%{deleteContentRange: %{range: %{startIndex: 50}}}, &1))
+      assert Enum.any?(requests, &Map.has_key?(&1, "insertTable"))
+      # No second deleteContentRange for the gallery slot (would be zero-width and API-rejected)
+      gallery_string_deletes =
+        Enum.count(requests, &Map.has_key?(&1, "deleteContentRange"))
+
+      assert gallery_string_deletes == 0,
+             "list_image_inserts must not emit its own deleteContentRange for table slots"
     end
   end
 

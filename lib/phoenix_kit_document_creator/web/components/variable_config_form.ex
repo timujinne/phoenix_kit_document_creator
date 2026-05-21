@@ -35,7 +35,14 @@ defmodule PhoenixKitDocumentCreator.Web.Components.VariableConfigForm do
   def config_form(%{variable: %{type: :image_list}} = assigns) do
     current = assigns.variable.config[:separator] || assigns.variable.config["separator"]
     current_separator = if current, do: to_string(current), else: "newline"
-    assigns = assign(assigns, :current_separator, current_separator)
+
+    current_columns =
+      assigns.variable.config[:columns] || assigns.variable.config["columns"] || 1
+
+    current_columns = to_string(current_columns)
+
+    assigns =
+      assign(assigns, current_separator: current_separator, current_columns: current_columns)
 
     ~H"""
     <div class="space-y-2">
@@ -64,6 +71,21 @@ defmodule PhoenixKitDocumentCreator.Web.Components.VariableConfigForm do
           <option value="newline" selected={@current_separator == "newline"}>{gettext("New line")}</option>
           <option value="space" selected={@current_separator == "space"}>{gettext("Space")}</option>
           <option value="none" selected={@current_separator == "none"}>{gettext("None")}</option>
+        </select>
+      </div>
+      <div class="form-control">
+        <label class="label py-1">
+          <span class="label-text text-sm">{gettext("Columns")}</span>
+        </label>
+        <select
+          name={"variables[#{@variable.name}][config][columns]"}
+          class="select select-bordered select-sm w-full"
+          phx-debounce="500"
+        >
+          <option value="1" selected={@current_columns == "1"}>1</option>
+          <option value="2" selected={@current_columns == "2"}>2</option>
+          <option value="3" selected={@current_columns == "3"}>3</option>
+          <option value="4" selected={@current_columns == "4"}>4</option>
         </select>
       </div>
       <div class="form-control">

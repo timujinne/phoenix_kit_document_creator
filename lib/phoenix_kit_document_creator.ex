@@ -183,7 +183,7 @@ defmodule PhoenixKitDocumentCreator do
         label: "Categories",
         icon: "hero-folder",
         path: "document-creator/categories",
-        priority: 647,
+        priority: 651,
         level: :admin,
         permission: module_key(),
         parent: :admin_document_creator,
