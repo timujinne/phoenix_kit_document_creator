@@ -95,6 +95,36 @@ the items above). Resolved so the whole pipeline passes:
   Matched by `{file, warning_type}` so the entries survive line shifts; dialyzer reports
   `Unnecessary Skips: 0`.
 
+## 9. Code-review pass (reuse / quality / efficiency)
+
+A three-agent review of items #1–#8 surfaced these fixes — all pure refactors, no
+behavior change, `mix precommit` still green:
+
+- **Efficiency:** dropped the redundant `assign_deleted_by_names/1` call from
+  `patch_file_in_assigns/2` (`documents_live.ex`). That path only fires on active-file
+  taxonomy changes (pickers render in the active view only) and never mutates the trashed
+  lists, so it re-queried `get_users_by_uuids` per pick for a map the trash-only view
+  never reads. `:load_initial` / `:sync_from_drive` already cover every trashed-list
+  change; the helper's comment was corrected to drop the stale "optimistic move" claim.
+- **Quality:** removed a dead `MapSet.new |> MapSet.to_list` round-trip in the Phase-2
+  table flow (`google_docs_client.ex`) — leftover from the old set-difference algorithm;
+  `match_new_tables/3` is order-based and needs only a list, so `pre_existing_table_starts`
+  is now collected directly as one.
+- **Reuse / Quality:** extracted `GoogleDocsClient.cached_folder_id_keys/0` (backed by
+  `@cached_folder_id_keys`) so `google_oauth_settings_live.ex` no longer duplicates the
+  folder-cache key list.
+- **Quality:** extracted `Taxonomy.apply_status_filter/2`, shared by all four
+  `list_*`/`count_*` functions (was a copy-pasted `:status` `case`).
+- **Reuse:** `fetch_template_by_file_id/1` now reuses `get_template_by_google_doc_id/1`
+  instead of repeating the `get_by`.
+
+Flagged but intentionally skipped (verified false positives / would change behavior):
+reusing the dep's `User.full_name/1` (different fallback chain — would regress to `nil`);
+unifying `deleted_schema/1` ⇄ `restored_schema/1` (the delete and restore paths genuinely
+speak different atom domains); making `match_new_tables/3` private (public-for-test is the
+module's established convention); and adding the name-resolve to `apply_optimistic_move`
+(unnecessary — the optimistic file map has no `data.deleted.by_uuid` until the next sync).
+
 ## Not done (out of scope / deferred)
 
 - End-to-end test of the `substitute_all_images` Phase 1/2 orchestration. `get_document`
