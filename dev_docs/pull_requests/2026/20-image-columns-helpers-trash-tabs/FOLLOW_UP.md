@@ -5,8 +5,9 @@
 
 Applied directly to `main` after the review in [`CLAUDE_REVIEW.md`](./CLAUDE_REVIEW.md).
 All non-integration tests pass (`343 tests, 0 failures`, integration excluded — no local
-PostgreSQL); `mix format` clean; `mix credo --strict` down to the pre-existing baseline
-(no new findings).
+PostgreSQL); `mix format` clean; and after item #8, the full `mix precommit` pipeline
+passes (compile `--warnings-as-errors`, `deps.unlock --check-unused`, format,
+`credo --strict`, dialyzer).
 
 ## 1. Stale `image_slots_for_template/1` test (review #1)
 
@@ -68,6 +69,32 @@ branch of `substitute_all_images` into `apply_image_fills/3`, leaving a clear
 gather-then-apply shape and clearing that function's Credo nesting finding. Pure
 extraction, no behavior change.
 
+## 8. Make `mix precommit` green (credo --strict + dialyzer)
+
+`mix precommit` was already red on `main` before this work (pre-existing debt, none from
+the items above). Resolved so the whole pipeline passes:
+
+- **Credo `--strict`** (was 8 refactoring + 2 design findings → **0**), all pure
+  extractions with no behavior change:
+  - `documents.ex`: split `update_template_variable_config` into
+    `fetch_template_by_file_id` / `merge_variable_config` / `write_variable_config!`;
+    aliased `Ecto.Adapters.SQL`. Flattened `rename_document` into a single `with`
+    (dropping the redundant last clause; also covers review #7's nesting-by-extraction
+    pattern for that function).
+  - `google_docs_client.ex`: extracted `migrate_folder_candidate` /
+    `resolve_migration_folder_id` / `move_migration_folder` / `clear_cached_folder_ids`
+    from `migrate_folders_to_root`.
+  - `google_oauth_settings_live.ex`: decomposed `save_folders` into six helpers and
+    extracted `run_folder_migration` from `migrate_folders` (helpers placed below the
+    `handle_event/3` clauses so the clause group stays contiguous).
+  - `preset_form_live.ex`: extracted `match_section_by_id` from `reorder_sections`.
+  - `rename_document_test.exs`: aliased `Test.StubDocsClient`.
+- **Dialyzer** (5 `call_without_opaque` false positives → ignored): added
+  `.dialyzer_ignore.exs` for the opaque external types `Gettext.Plural`, `MapSet`
+  (`stale_info`), and `Ecto.Multi` (composer), wired via `mix.exs` `ignore_warnings`.
+  Matched by `{file, warning_type}` so the entries survive line shifts; dialyzer reports
+  `Unnecessary Skips: 0`.
+
 ## Not done (out of scope / deferred)
 
 - End-to-end test of the `substitute_all_images` Phase 1/2 orchestration. `get_document`
@@ -75,7 +102,4 @@ extraction, no behavior change.
   full integration setup (DataCase + stubbed Drive/Docs requests) and would be DB-gated
   — i.e. it would not run in the sandbox. Deferred; the pure helpers it delegates to are
   covered.
-- Pre-existing Credo complexity/nesting findings in `migrate_folders_to_root`,
-  `rename_document`, `update_template_variable_config`, and the OAuth/preset LiveViews —
-  unrelated to the image-columns work; left at the repo's existing baseline.
 - Empty trailing grid cells when `media` doesn't fill the last row (cosmetic).
