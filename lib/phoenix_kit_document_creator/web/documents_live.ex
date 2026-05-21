@@ -1468,8 +1468,13 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
       }
       item_id={& &1["id"]}
       class="table-sm"
+    ><%!--
+      NOTE: a denser card grid (xl:grid-cols-5) needs the `card_grid_class` attr,
+      which is not in the released phoenix_kit (1.7.117 hardcodes
+      gap-4 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4). Re-add
       card_grid_class="gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
-    >
+      once the dep ships that attr (see :requires_unreleased_core in test_helper.exs).
+    --%>
       <:card_media :let={file}>
         <div
           :if={MapSet.member?(@pending_files, file["id"])}
