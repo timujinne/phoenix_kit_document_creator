@@ -1,3 +1,10 @@
+## 0.4.2 - 2026-05-21
+
+### Fixed
+
+- **Documents listing compiles clean again.** Removed the `card_grid_class` attr passed to `<.table_default>` in `DocumentsLive` — it is not defined in the released `phoenix_kit` core component, so it failed `mix precommit` (`compile --warnings-as-errors`) and was silently dropped at runtime by the component's `:global` attr (no effect on the card grid). The denser grid awaits a core release that ships the attr; see the marker comment at the call site.
+- **Drive image upload hardened.** `GoogleDocsClient.upload_image_for_embedding/3` now escapes backslashes (before quotes) when building the multipart metadata JSON, so a file name containing `\` can no longer produce an invalid metadata object. Manual JSON construction is retained to avoid a transitive Jason dependency.
+
 ## 0.4.1 - 2026-05-21
 
 ### Added
