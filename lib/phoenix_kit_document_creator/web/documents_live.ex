@@ -1236,10 +1236,13 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
   end
 
   # Resolves the display names for everyone who trashed a currently-loaded file
-  # and stashes them in assigns. Runs only when the trashed lists change (load,
-  # sync, optimistic move) — never per render — so the user lookup is not
-  # repeated on every LiveView update. Resolves both trashed lists at once so
-  # the map is correct regardless of which trash tab is shown.
+  # and stashes them in assigns. Runs only on the two paths that load the
+  # trashed lists (`:load_initial` and `:sync_from_drive`) — never per render —
+  # so the user lookup is not repeated on every LiveView update. Resolves both
+  # trashed lists at once so the map is correct regardless of which trash tab is
+  # shown. (Optimistic delete/restore doesn't re-resolve: the optimistic file
+  # map has no `data.deleted.by_uuid` yet — that's set server-side — so the name
+  # only becomes resolvable after the follow-up sync.)
   defp assign_deleted_by_names(socket) do
     files = socket.assigns.trashed_templates ++ socket.assigns.trashed_documents
     assign(socket, deleted_by_names: build_deleted_by_names(files))
@@ -1812,14 +1815,12 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
     trashed_templates = patch_file_list(assigns.trashed_templates, file_id, file_map)
     trashed_documents = patch_file_list(assigns.trashed_documents, file_id, file_map)
 
-    socket
-    |> assign(
+    assign(socket,
       templates: templates,
       documents: documents,
       trashed_templates: trashed_templates,
       trashed_documents: trashed_documents
     )
-    |> assign_deleted_by_names()
   end
 
   defp patch_file_list(files, file_id, replacement) do

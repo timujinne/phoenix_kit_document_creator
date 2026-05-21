@@ -589,12 +589,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
   defp maybe_drop_cached_folder_ids(data, false), do: data
 
   defp maybe_drop_cached_folder_ids(data, true) do
-    Map.drop(data, [
-      "templates_folder_id",
-      "documents_folder_id",
-      "deleted_templates_folder_id",
-      "deleted_documents_folder_id"
-    ])
+    Map.drop(data, GoogleDocsClient.cached_folder_id_keys())
   end
 
   defp persist_folder_settings(data) do

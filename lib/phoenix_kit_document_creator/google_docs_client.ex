@@ -38,6 +38,15 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   @folder_settings_key "document_creator_folders"
   @settings_key "document_creator_settings"
 
+  # Discovered-folder-ID cache keys inside the folder settings map. Dropped
+  # whenever the folder config changes so IDs are re-discovered from the new
+  # location. Exposed so callers (e.g. the settings LiveView) don't duplicate
+  # this list.
+  @cached_folder_id_keys ~w(
+    templates_folder_id documents_folder_id
+    deleted_templates_folder_id deleted_documents_folder_id
+  )
+
   # Matches an RFC 4122-shaped UUID string (the storage row identifier
   # used by PhoenixKit.Integrations — currently UUIDv7, but this guard
   # only needs to discriminate "promoted to uuid" from legacy
@@ -518,6 +527,10 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   @spec folder_settings_key() :: String.t()
   def folder_settings_key, do: @folder_settings_key
 
+  @doc "Folder-settings keys holding discovered folder IDs (cleared on config change)."
+  @spec cached_folder_id_keys() :: [String.t()]
+  def cached_folder_id_keys, do: @cached_folder_id_keys
+
   @doc """
   Move the top-level Drive folders (templates, documents, deleted) into
   `root_folder_id`. For each folder the cached ID is tried first; when absent,
@@ -582,12 +595,7 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   end
 
   defp clear_cached_folder_ids(folder_data) do
-    cache_keys = ~w(
-      templates_folder_id documents_folder_id
-      deleted_templates_folder_id deleted_documents_folder_id
-    )
-
-    updated = Map.drop(folder_data, cache_keys)
+    updated = Map.drop(folder_data, @cached_folder_id_keys)
     Settings.update_json_setting_with_module(@folder_settings_key, updated, "document_creator")
   end
 
@@ -1663,7 +1671,7 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
     # Phase 2 can reconstruct the pre/new table interleaving (see
     # match_new_tables/3) and identify the newly inserted tables.
     pre_existing_table_starts =
-      doc2 |> collect_tables() |> MapSet.new(& &1["table"]["startIndex"])
+      doc2 |> collect_tables() |> Enum.map(& &1["table"]["startIndex"])
 
     with {:ok, _} <- maybe_batch(&batch_update/2, doc_id, phase1_requests) do
       if table_ranges == [] do
@@ -1693,18 +1701,17 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
     with {:ok, %{body: doc3}} <- get_document(doc_id) do
       table_slots_asc = Enum.sort_by(table_ranges, & &1.start_index, :asc)
       slot_starts = Enum.map(table_slots_asc, & &1.start_index)
-      pre_starts = MapSet.to_list(pre_existing_table_starts)
 
       tables_asc =
         doc3
         |> collect_tables()
         |> Enum.sort_by(fn el -> el["table"]["startIndex"] end, :asc)
 
-      case match_new_tables(tables_asc, pre_starts, slot_starts) do
+      case match_new_tables(tables_asc, pre_existing_table_starts, slot_starts) do
         :mismatch ->
           Logger.warning(
             "substitute_all_images: table count mismatch in doc #{doc_id} " <>
-              "(found #{length(tables_asc)} tables; expected #{length(pre_starts)} " <>
+              "(found #{length(tables_asc)} tables; expected #{length(pre_existing_table_starts)} " <>
               "pre-existing + #{length(table_slots_asc)} new); skipping Phase 2"
           )
 

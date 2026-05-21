@@ -156,7 +156,7 @@ defmodule PhoenixKitDocumentCreator.Documents do
   end
 
   defp fetch_template_by_file_id(template_file_id) do
-    case repo().get_by(Template, google_doc_id: template_file_id) do
+    case get_template_by_google_doc_id(template_file_id) do
       nil -> {:error, :not_found}
       template -> {:ok, template}
     end
