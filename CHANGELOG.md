@@ -1,3 +1,14 @@
+## 0.4.3 - 2026-05-22
+
+### Changed
+
+- **Denser, responsive Documents/Templates card grid.** Re-enabled the `card_grid_class` attr on `<.table_default>` (removed in 0.4.2 because the released core lacked it) so the grid now scales from one column up to six (`grid-cols-1` … `2xl:grid-cols-6`). The toolbar is responsive: below `sm` the page actions collapse into a single dropdown and the filters hide behind a "Filters" toggle; on `sm`+ they show inline. Requires `phoenix_kit` ≥ 1.7.118 (locked at 1.7.119).
+- **Category / Type / Preset forms use the shared core components.** Converted the hand-rolled `<input>` / `<label>` / manual error loops in `CategoryFormLive`, `TypeFormLive`, and `PresetFormLive` to the PhoenixKit core `<.input>` / `<.select>` / `<.textarea>` components, so label and column alignment match the rest of the admin UI and validation errors render through the shared gettext path.
+
+### Fixed
+
+- **Card-grid loading skeleton matches the loaded grid.** The skeleton used `gap-4` while the real card grid uses `gap-3`, so card spacing visibly shifted when loading finished; both now use `gap-3`, and `card_grid_class` carries an explicit `grid-cols-1` base.
+
 ## 0.4.2 - 2026-05-21
 
 ### Fixed
