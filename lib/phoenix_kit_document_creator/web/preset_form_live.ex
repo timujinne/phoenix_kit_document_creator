@@ -12,6 +12,10 @@ defmodule PhoenixKitDocumentCreator.Web.PresetFormLive do
   use Phoenix.LiveView
   use Gettext, backend: PhoenixKitDocumentCreator.Gettext
 
+  import PhoenixKitWeb.Components.Core.Input, only: [input: 1]
+  import PhoenixKitWeb.Components.Core.Select, only: [select: 1]
+  import PhoenixKitWeb.Components.Core.Textarea, only: [textarea: 1]
+
   require Logger
 
   alias PhoenixKit.Utils.Routes
@@ -217,32 +221,29 @@ defmodule PhoenixKitDocumentCreator.Web.PresetFormLive do
       </p>
 
       <.form for={@form} phx-change="validate" phx-submit="save" class="flex flex-col gap-4">
-        <div class="form-control">
-          <label class="label"><span class="label-text">{gettext("Name")}</span></label>
-          <input
-            type="text"
-            name="preset[name]"
-            value={Phoenix.HTML.Form.input_value(@form, :name)}
-            class="input input-bordered w-full"
-          />
-        </div>
+        <.input
+          field={@form[:name]}
+          type="text"
+          label={gettext("Name")}
+          class="input-sm"
+          phx-debounce="300"
+        />
 
-        <div class="form-control">
-          <label class="label"><span class="label-text">{gettext("Description")}</span></label>
-          <textarea name="preset[description]" class="textarea textarea-bordered w-full">{Phoenix.HTML.Form.input_value(@form, :description)}</textarea>
-        </div>
+        <.textarea
+          field={@form[:description]}
+          label={gettext("Description")}
+          class="textarea-sm"
+          rows="3"
+          phx-debounce="300"
+        />
 
-        <div class="form-control">
-          <label class="label"><span class="label-text">{gettext("Document type")}</span></label>
-          <select name="preset[scope_type]" class="select select-bordered w-full">
-            <option value="">{gettext("Untyped")}</option>
-            <%= for type <- @types do %>
-              <option value={type.uuid} selected={@preset.scope_type == type.uuid}>
-                {type.name}
-              </option>
-            <% end %>
-          </select>
-        </div>
+        <.select
+          field={@form[:scope_type]}
+          label={gettext("Document type")}
+          options={Enum.map(@types, &{&1.name, &1.uuid})}
+          prompt={gettext("Untyped")}
+          class="select-sm"
+        />
 
         <div class="form-control">
           <div class="flex items-center justify-between">

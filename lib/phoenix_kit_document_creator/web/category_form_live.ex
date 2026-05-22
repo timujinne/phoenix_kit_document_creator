@@ -10,6 +10,9 @@ defmodule PhoenixKitDocumentCreator.Web.CategoryFormLive do
   use Phoenix.LiveView
   use Gettext, backend: PhoenixKitDocumentCreator.Gettext
 
+  import PhoenixKitWeb.Components.Core.Input, only: [input: 1]
+  import PhoenixKitWeb.Components.Core.Textarea, only: [textarea: 1]
+
   require Logger
 
   alias PhoenixKit.Utils.Routes
@@ -124,42 +127,34 @@ defmodule PhoenixKitDocumentCreator.Web.CategoryFormLive do
       <div class="card bg-base-100 shadow-sm border border-base-200">
         <div class="card-body">
           <.form for={@form} phx-change="validate" phx-submit="save">
-            <div class="form-control mb-4">
-              <label class="label" for="category_name">
-                <span class="label-text">{gettext("Name")}</span>
-              </label>
-              <input
-                type="text"
-                id="category_name"
-                name={@form[:name].name}
-                value={@form[:name].value}
-                class={"input input-bordered input-sm #{if @form[:name].errors != [], do: "input-error"}"}
-                phx-debounce="300"
-              />
-              <%= for {msg, _} <- @form[:name].errors do %>
-                <p class="text-error text-xs mt-1">{msg}</p>
-              <% end %>
-            </div>
+            <.input
+              field={@form[:name]}
+              type="text"
+              label={gettext("Name")}
+              class="input-sm"
+              wrapper_class="mb-4"
+              phx-debounce="300"
+            />
 
-            <div class="form-control mb-6">
-              <label class="label" for="category_description">
-                <span class="label-text">{gettext("Description")}</span>
-                <span class="label-text-alt text-base-content/50">{gettext("Optional")}</span>
-              </label>
-              <textarea
-                id="category_description"
-                name={@form[:description].name}
-                class="textarea textarea-bordered textarea-sm"
+            <div class="mb-6">
+              <.textarea
+                field={@form[:description]}
+                label={gettext("Description")}
+                class="textarea-sm"
                 rows="3"
                 phx-debounce="300"
-              >{@form[:description].value}</textarea>
+              />
             </div>
 
             <div class="flex gap-2 justify-end">
               <a href={Routes.path("/admin/document-creator/categories")} class="btn btn-ghost btn-sm">
                 {gettext("Cancel")}
               </a>
-              <button type="submit" class="btn btn-primary btn-sm" phx-disable-with={gettext("Saving…")}>
+              <button
+                type="submit"
+                class="btn btn-primary btn-sm"
+                phx-disable-with={gettext("Saving…")}
+              >
                 {gettext("Save")}
               </button>
             </div>
@@ -173,7 +168,9 @@ defmodule PhoenixKitDocumentCreator.Web.CategoryFormLive do
           <div class="card-body">
             <h3 class="card-title text-error text-base">{gettext("Danger Zone")}</h3>
             <p class="text-sm text-base-content/70">
-              {gettext("Permanently deleting a category also deletes all its types. Templates and documents will lose their category assignment.")}
+              {gettext(
+                "Permanently deleting a category also deletes all its types. Templates and documents will lose their category assignment."
+              )}
             </p>
             <div class="card-actions mt-2">
               <button

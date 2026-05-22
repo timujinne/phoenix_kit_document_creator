@@ -11,6 +11,10 @@ defmodule PhoenixKitDocumentCreator.Web.TypeFormLive do
   use Phoenix.LiveView
   use Gettext, backend: PhoenixKitDocumentCreator.Gettext
 
+  import PhoenixKitWeb.Components.Core.Input, only: [input: 1]
+  import PhoenixKitWeb.Components.Core.Select, only: [select: 1]
+  import PhoenixKitWeb.Components.Core.Textarea, only: [textarea: 1]
+
   require Logger
 
   alias PhoenixKit.Utils.Routes
@@ -144,66 +148,44 @@ defmodule PhoenixKitDocumentCreator.Web.TypeFormLive do
       <div class="card bg-base-100 shadow-sm border border-base-200">
         <div class="card-body">
           <.form for={@form} phx-change="validate" phx-submit="save">
-            <div class="form-control mb-4">
-              <label class="label" for="type_name">
-                <span class="label-text">{gettext("Name")}</span>
-              </label>
-              <input
-                type="text"
-                id="type_name"
-                name={@form[:name].name}
-                value={@form[:name].value}
-                class={"input input-bordered input-sm #{if @form[:name].errors != [], do: "input-error"}"}
-                phx-debounce="300"
-              />
-              <%= for {msg, _} <- @form[:name].errors do %>
-                <p class="text-error text-xs mt-1">{msg}</p>
-              <% end %>
-            </div>
+            <.input
+              field={@form[:name]}
+              type="text"
+              label={gettext("Name")}
+              class="input-sm"
+              wrapper_class="mb-4"
+              phx-debounce="300"
+            />
 
-            <div class="form-control mb-4">
-              <label class="label" for="type_description">
-                <span class="label-text">{gettext("Description")}</span>
-                <span class="label-text-alt text-base-content/50">{gettext("Optional")}</span>
-              </label>
-              <textarea
-                id="type_description"
-                name={@form[:description].name}
-                class="textarea textarea-bordered textarea-sm"
+            <div class="mb-4">
+              <.textarea
+                field={@form[:description]}
+                label={gettext("Description")}
+                class="textarea-sm"
                 rows="3"
                 phx-debounce="300"
-              >{@form[:description].value}</textarea>
+              />
             </div>
 
-            <div class="form-control mb-6">
-              <label class="label" for="type_category_uuid">
-                <span class="label-text">{gettext("Category")}</span>
-              </label>
-              <select
-                id="type_category_uuid"
-                name={@form[:category_uuid].name}
-                class={"select select-bordered select-sm #{if @form[:category_uuid].errors != [], do: "select-error"}"}
-              >
-                <option value="">{gettext("Select a category")}</option>
-                <%= for cat <- @categories do %>
-                  <option
-                    value={cat.uuid}
-                    selected={to_string(@form[:category_uuid].value) == to_string(cat.uuid)}
-                  >
-                    {cat.name}
-                  </option>
-                <% end %>
-              </select>
-              <%= for {msg, _} <- @form[:category_uuid].errors do %>
-                <p class="text-error text-xs mt-1">{msg}</p>
-              <% end %>
+            <div class="mb-6">
+              <.select
+                field={@form[:category_uuid]}
+                label={gettext("Category")}
+                options={Enum.map(@categories, &{&1.name, &1.uuid})}
+                prompt={gettext("Select a category")}
+                class="select-sm"
+              />
             </div>
 
             <div class="flex gap-2 justify-end">
               <a href={Routes.path("/admin/document-creator/categories")} class="btn btn-ghost btn-sm">
                 {gettext("Cancel")}
               </a>
-              <button type="submit" class="btn btn-primary btn-sm" phx-disable-with={gettext("Saving…")}>
+              <button
+                type="submit"
+                class="btn btn-primary btn-sm"
+                phx-disable-with={gettext("Saving…")}
+              >
                 {gettext("Save")}
               </button>
             </div>
@@ -217,7 +199,9 @@ defmodule PhoenixKitDocumentCreator.Web.TypeFormLive do
           <div class="card-body">
             <h3 class="card-title text-error text-base">{gettext("Danger Zone")}</h3>
             <p class="text-sm text-base-content/70">
-              {gettext("Permanently deleting a type removes it from all templates and documents (FK set to NULL).")}
+              {gettext(
+                "Permanently deleting a type removes it from all templates and documents (FK set to NULL)."
+              )}
             </p>
             <div class="card-actions mt-2">
               <button
