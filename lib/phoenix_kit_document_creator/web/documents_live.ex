@@ -1554,7 +1554,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
           target="_blank"
           style="display:flex;justify-content:center;padding:8px 8px 8px 8px;background:oklch(var(--color-base-200));"
         >
-          {render_thumbnail(%{thumbnail: @thumbnails[file["id"]]})}
+          <.render_thumbnail thumbnail={@thumbnails[file["id"]]} />
         </a>
       </:card_media>
       <:card_body :let={file}>
@@ -1598,22 +1598,22 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
             under daisyUI's `.select` floor.
           --%>
           <div class="flex flex-wrap items-center gap-1 min-w-0">
-            {render_language_picker(%{
-              file: file,
-              is_template: @is_template,
-              enabled_languages: @enabled_languages,
-              status_mode: @status_mode
-            })}
-            {render_category_picker(%{
-              file: file,
-              is_template: @is_template,
-              status_mode: @status_mode,
-              category_names: @category_names,
-              cat_options: @cat_options,
-              types_by_category: @types_by_category,
-              type_names: @type_names,
-              layout: "card"
-            })}
+            <.render_language_picker
+              file={file}
+              is_template={@is_template}
+              enabled_languages={@enabled_languages}
+              status_mode={@status_mode}
+            />
+            <.render_category_picker
+              file={file}
+              is_template={@is_template}
+              status_mode={@status_mode}
+              category_names={@category_names}
+              cat_options={@cat_options}
+              types_by_category={@types_by_category}
+              type_names={@type_names}
+              layout="card"
+            />
           </div>
           <p :if={file["modifiedTime"]} class="text-xs text-base-content/40 mt-auto pt-2">
             {gettext("Updated:")} {format_time(file["modifiedTime"])}
@@ -1708,22 +1708,22 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
                 >
                   {file["name"]}
                 </a>
-                {render_language_picker(%{
-                  file: file,
-                  is_template: @is_template,
-                  enabled_languages: @enabled_languages,
-                  status_mode: @status_mode
-                })}
-                {render_category_picker(%{
-                  file: file,
-                  is_template: @is_template,
-                  status_mode: @status_mode,
-                  category_names: @category_names,
-                  cat_options: @cat_options,
-                  types_by_category: @types_by_category,
-                  type_names: @type_names,
-                  layout: "inline"
-                })}
+                <.render_language_picker
+                  file={file}
+                  is_template={@is_template}
+                  enabled_languages={@enabled_languages}
+                  status_mode={@status_mode}
+                />
+                <.render_category_picker
+                  file={file}
+                  is_template={@is_template}
+                  status_mode={@status_mode}
+                  category_names={@category_names}
+                  cat_options={@cat_options}
+                  types_by_category={@types_by_category}
+                  type_names={@type_names}
+                  layout="inline"
+                />
               </div>
             </.table_default_cell>
             <.table_default_cell>
@@ -1837,6 +1837,11 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
   # the trigger; clicking opens a native HTML `popover` listing every
   # enabled language plus a "Clear" entry. Popovers escape the card's
   # `overflow: hidden` clipping container automatically.
+  attr(:file, :map, required: true)
+  attr(:is_template, :boolean, required: true)
+  attr(:enabled_languages, :list, required: true)
+  attr(:status_mode, :string, required: true)
+
   defp render_language_picker(assigns) do
     ~H"""
     <div
@@ -1899,10 +1904,22 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
     """
   end
 
+  attr(:file, :map, required: true)
+  attr(:is_template, :boolean, required: true)
+  attr(:status_mode, :string, required: true)
+  attr(:category_names, :map, required: true)
+  attr(:cat_options, :list, required: true)
+  attr(:types_by_category, :map, required: true)
+  attr(:type_names, :map, required: true)
+
+  attr(:layout, :string,
+    default: "inline",
+    values: ~w(inline card),
+    doc: ~s(Layout variant: "inline" for the table row, "card" for the card grid.)
+  )
+
   defp render_category_picker(assigns) do
     # Resolve display names from the precomputed lookup maps (no DB call per row).
-    assigns = Map.put_new(assigns, :layout, "inline")
-
     assigns =
       Map.merge(assigns, %{
         # Resolve the layout variant once; the template branches on `@card?`.
@@ -2000,6 +2017,8 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
     </div>
     """
   end
+
+  attr(:thumbnail, :any, default: nil, doc: "Thumbnail URL, or nil while loading.")
 
   defp render_thumbnail(assigns) do
     ~H"""
