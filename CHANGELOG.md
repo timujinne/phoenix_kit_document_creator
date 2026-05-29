@@ -1,3 +1,17 @@
+## 0.4.4 - 2026-05-29
+
+### Fixed
+
+- **Documents/Templates card layout.** daisyUI's default `.card-body` padding (1.5rem) was stacking on top of the card's custom inner spacing, leaving a ~24px gap between the thumbnail and the title and a dead band under the action buttons; the card now zeroes `.card-body` padding via `[&_.card-body]:p-0` (targeting the nested element so a future `card-sm`/`card-md` size variant can't defeat it). The Category/Type `<select>` pickers no longer clip their trailing option in narrow cards — in the card view they shrink together and wrap to a second row, while the table-view row keeps the original inline, intrinsic-width pickers.
+
+### Changed
+
+- **Dependencies refreshed.** `phoenix_kit` 1.7.119 → 1.7.125, `phoenix_live_view` 1.1.30 → 1.1.31, `oban` 2.22.1 → 2.23.0, `leaf` 0.2.13 → 0.2.21, `fresco` 0.5.8 → 0.6.3, `etcher` 0.4.9 → 0.5.3, plus `swoosh`, `ex_aws_sns`, and `decimal` patch bumps.
+
+### Internal
+
+- **Document card render helpers are now declared function components.** `render_thumbnail/1`, `render_language_picker/1`, and `render_category_picker/1` carry `attr` declarations and are invoked via `<.component />`, so each call site is validated at compile time; the category picker's layout variant is now an `attr :layout, values: ~w(inline card), default: "inline"` and is resolved once into a `card?` assign. No behavior change.
+
 ## 0.4.3 - 2026-05-22
 
 ### Changed
