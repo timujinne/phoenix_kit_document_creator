@@ -1,3 +1,17 @@
+## 0.4.5 - 2026-05-31
+
+### Added
+
+- **Sortable Documents/Templates columns.** The Name / Status / Created / Modified headers are now sortable via PhoenixKit's `sort_header_cell` (default **Modified ↓**); a click toggles the column, a second click flips direction. Sorting is applied in memory before pagination and a whitelisted field parser guards the `toggle_sort` payload.
+- **Ellipsis (⋯) row-action menu.** The per-row action buttons (Edit/View, Export PDF, Restore/Delete) are replaced with PhoenixKit's `table_row_menu` dropdown in both the table and card views, preserving the per-status actions and their `phx-disable-with` guards.
+
+### Changed
+
+- **Sort state is URL-driven.** `toggle_sort` now `push_patch`es `sort_by` / `sort_dir` into the URL (read back in `handle_params`) like every other piece of table state, so the active sort is bookmarkable, shareable, and survives reload/back; the change also resets `page=1` in the URL so the page param can no longer go stale. Pagination links carry the sort params too.
+- **Date columns sort chronologically.** Created / Modified now compare parsed `DateTime` values via `DateTime.compare/2` (timezone-aware, naive values read as UTC) instead of lexicographic ISO-8601 strings, so rows order correctly across differing offsets and textual precision.
+- **Status column sorts by rank.** The Status column orders by a fixed rank (unfiled → lost → published) rather than alphabetically, surfacing the attention-needing states first; unknown/`nil` statuses still sort last in both directions.
+- **Dependencies refreshed.** `phoenix_kit` 1.7.125 → 1.7.126, `swoosh` 1.25.3 → 1.26.0.
+
 ## 0.4.4 - 2026-05-29
 
 ### Fixed
