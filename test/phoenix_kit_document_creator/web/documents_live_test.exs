@@ -816,6 +816,422 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLiveTest do
     end
   end
 
+  describe "sort_files/2 — assign-level tests (Google not connected)" do
+    # Tests for toggle_sort behavior via assigns inspection.
+    # Runs in the non-connected state (no StubIntegrations) so there is no
+    # background sync task that could race with state injection.
+
+    test "default sort assign is modified desc", %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      sort = :sys.get_state(view.pid).socket.assigns.sort
+      assert sort == %{by: :modified, dir: :desc}
+    end
+
+    test "toggle_sort on new column sets asc dir and resets page", %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      # Start from default (modified, desc), then sort by name.
+      render_click(view, "toggle_sort", %{"by" => "name"})
+
+      state = :sys.get_state(view.pid).socket.assigns
+      assert state.sort == %{by: :name, dir: :asc}
+      assert state.page == 1
+    end
+
+    test "toggle_sort on same column flips direction", %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      # First click: name asc
+      render_click(view, "toggle_sort", %{"by" => "name"})
+      assert :sys.get_state(view.pid).socket.assigns.sort == %{by: :name, dir: :asc}
+
+      # Second click: name desc
+      render_click(view, "toggle_sort", %{"by" => "name"})
+      assert :sys.get_state(view.pid).socket.assigns.sort == %{by: :name, dir: :desc}
+    end
+
+    test "toggle_sort with unknown field is ignored (whitelist)", %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      original_sort = :sys.get_state(view.pid).socket.assigns.sort
+
+      render_click(view, "toggle_sort", %{"by" => "evil_column"})
+
+      # Sort is unchanged when the field is unknown.
+      assert :sys.get_state(view.pid).socket.assigns.sort == original_sort
+    end
+
+    test "toggle_sort supports all four sortable columns", %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      for field <- ["name", "created", "modified", "status"] do
+        render_click(view, "toggle_sort", %{"by" => field})
+        sort = :sys.get_state(view.pid).socket.assigns.sort
+
+        assert sort.by == String.to_existing_atom(field),
+               "expected sort by :#{field} after toggle, got #{inspect(sort)}"
+      end
+    end
+
+    test "sort header cells render in list view", %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      # Inject list view mode directly to avoid push_patch routing issue in the
+      # test router (switch_view patches to /documents which isn't registered).
+      :sys.replace_state(view.pid, fn state ->
+        %{state | socket: Phoenix.Component.assign(state.socket, view_mode: "list")}
+      end)
+
+      html = render(view)
+
+      # The sort_header_cell emits phx-value-by for each sortable column.
+      assert html =~ "phx-value-by=\"name\""
+      assert html =~ "phx-value-by=\"created\""
+      assert html =~ "phx-value-by=\"modified\""
+      assert html =~ "phx-value-by=\"status\""
+    end
+
+    test "sort order is reflected in rendered row order", %{conn: conn} do
+      # Drive this test without google connected so there's no background
+      # sync task that could overwrite the injected document list.
+      unique = System.unique_integer([:positive])
+      id_a = "sort-doc-a-#{unique}"
+      id_b = "sort-doc-b-#{unique}"
+      name_a = "Zebra Document #{unique}"
+      name_b = "Apple Document #{unique}"
+
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      # Inject docs + list view + loaded state in one atomic replace.
+      # No background sync fires (google_connected is false by default).
+      :sys.replace_state(view.pid, fn state ->
+        doc_z = %{
+          "id" => id_a,
+          "name" => name_a,
+          "status" => nil,
+          "inserted_at" => nil,
+          "modifiedTime" => nil,
+          "data" => nil,
+          "path" => nil
+        }
+
+        doc_a = %{
+          "id" => id_b,
+          "name" => name_b,
+          "status" => nil,
+          "inserted_at" => nil,
+          "modifiedTime" => nil,
+          "data" => nil,
+          "path" => nil
+        }
+
+        new_socket =
+          state.socket
+          |> Phoenix.Component.assign(view_mode: "list")
+          |> Phoenix.Component.assign(documents: [doc_z, doc_a])
+          |> Phoenix.Component.assign(loaded: true, loading: false, google_connected: true)
+
+        %{state | socket: new_socket}
+      end)
+
+      # Sort by name asc — Apple should come before Zebra.
+      render_click(view, "toggle_sort", %{"by" => "name"})
+      html = render(view)
+
+      pos_apple = :binary.match(html, name_b)
+      pos_zebra = :binary.match(html, name_a)
+
+      assert pos_apple != :nomatch, "Apple Document not found in rendered HTML"
+      assert pos_zebra != :nomatch, "Zebra Document not found in rendered HTML"
+
+      {apple_start, _} = pos_apple
+      {zebra_start, _} = pos_zebra
+
+      assert apple_start < zebra_start,
+             "Expected Apple to appear before Zebra in name asc sort"
+
+      # Flip to desc — Zebra should come first.
+      render_click(view, "toggle_sort", %{"by" => "name"})
+      html2 = render(view)
+
+      {apple2, _} = :binary.match(html2, name_b)
+      {zebra2, _} = :binary.match(html2, name_a)
+      assert zebra2 < apple2, "Expected Zebra to appear before Apple in name desc sort"
+    end
+
+    test "files with a nil sort value always sort last regardless of direction",
+         %{conn: conn} do
+      unique = System.unique_integer([:positive])
+      named_id = "sort-named-#{unique}"
+      nil_id = "sort-nil-#{unique}"
+      named = "Named Document #{unique}"
+
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      # nil-name doc is placed FIRST in the source list, so a passing assertion
+      # proves the sort moved it last rather than relying on input order.
+      :sys.replace_state(view.pid, fn state ->
+        named_doc = %{
+          "id" => named_id,
+          "name" => named,
+          "status" => nil,
+          "inserted_at" => nil,
+          "modifiedTime" => nil,
+          "data" => nil,
+          "path" => nil
+        }
+
+        nil_doc = %{
+          "id" => nil_id,
+          "name" => nil,
+          "status" => nil,
+          "inserted_at" => nil,
+          "modifiedTime" => nil,
+          "data" => nil,
+          "path" => nil
+        }
+
+        new_socket =
+          state.socket
+          |> Phoenix.Component.assign(view_mode: "list")
+          |> Phoenix.Component.assign(documents: [nil_doc, named_doc])
+          |> Phoenix.Component.assign(loaded: true, loading: false, google_connected: true)
+
+        %{state | socket: new_socket}
+      end)
+
+      # asc: the nil-name row must come after the named row.
+      render_click(view, "toggle_sort", %{"by" => "name"})
+      html_asc = render(view)
+      {named_asc, _} = :binary.match(html_asc, named)
+      {nil_asc, _} = :binary.match(html_asc, "doc-row-menu-#{nil_id}")
+      assert named_asc < nil_asc, "nil-name doc should sort after the named doc (asc)"
+
+      # desc: the nil-name row must STILL come last.
+      render_click(view, "toggle_sort", %{"by" => "name"})
+      html_desc = render(view)
+      {named_desc, _} = :binary.match(html_desc, named)
+      {nil_desc, _} = :binary.match(html_desc, "doc-row-menu-#{nil_id}")
+      assert named_desc < nil_desc, "nil-name doc should sort last even in desc"
+    end
+
+    test "modifiedTime ISO-8601 sort: newest first desc, nil always last in both directions",
+         %{conn: conn} do
+      unique = System.unique_integer([:positive])
+      id_old = "sort-mod-old-#{unique}"
+      id_new = "sort-mod-new-#{unique}"
+      id_nil = "sort-mod-nil-#{unique}"
+
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      # nil-time doc placed FIRST so the assertion proves the sort moved it last.
+      :sys.replace_state(view.pid, fn state ->
+        nil_doc = %{
+          "id" => id_nil,
+          "name" => "Nil-time Doc #{unique}",
+          "status" => nil,
+          "inserted_at" => nil,
+          "modifiedTime" => nil,
+          "data" => nil,
+          "path" => nil
+        }
+
+        old_doc = %{
+          "id" => id_old,
+          "name" => "Old Doc #{unique}",
+          "status" => nil,
+          "inserted_at" => nil,
+          "modifiedTime" => "2026-05-01T10:00:00Z",
+          "data" => nil,
+          "path" => nil
+        }
+
+        new_doc = %{
+          "id" => id_new,
+          "name" => "New Doc #{unique}",
+          "status" => nil,
+          "inserted_at" => nil,
+          "modifiedTime" => "2026-05-30T10:00:00Z",
+          "data" => nil,
+          "path" => nil
+        }
+
+        new_socket =
+          state.socket
+          |> Phoenix.Component.assign(view_mode: "list")
+          |> Phoenix.Component.assign(documents: [nil_doc, old_doc, new_doc])
+          |> Phoenix.Component.assign(loaded: true, loading: false, google_connected: true)
+
+        %{state | socket: new_socket}
+      end)
+
+      # Default sort is modified desc — toggle once to get asc, toggle again for desc.
+      # First bring to modified asc.
+      render_click(view, "toggle_sort", %{"by" => "modified"})
+      html_asc = render(view)
+
+      {old_asc, _} = :binary.match(html_asc, "doc-row-menu-#{id_old}")
+      {new_asc, _} = :binary.match(html_asc, "doc-row-menu-#{id_new}")
+      {nil_asc, _} = :binary.match(html_asc, "doc-row-menu-#{id_nil}")
+
+      assert old_asc < new_asc, "asc: older doc should appear before newer doc"
+      assert new_asc < nil_asc, "asc: nil-time doc should sort last"
+
+      # Flip to desc.
+      render_click(view, "toggle_sort", %{"by" => "modified"})
+      html_desc = render(view)
+
+      {old_desc, _} = :binary.match(html_desc, "doc-row-menu-#{id_old}")
+      {new_desc, _} = :binary.match(html_desc, "doc-row-menu-#{id_new}")
+      {nil_desc, _} = :binary.match(html_desc, "doc-row-menu-#{id_nil}")
+
+      assert new_desc < old_desc, "desc: newer doc should appear before older doc"
+      assert old_desc < nil_desc, "desc: nil-time doc should still sort last"
+    end
+  end
+
+  describe "row menu (⋯) — table and card actions" do
+    # Tests that verify the ⋯ dropdown renders the correct action items in table
+    # and card views for active and trashed modes. Uses state injection to avoid
+    # async sync races (no google connected → no background sync task).
+
+    test "active mode: table row menu renders Edit, Export PDF, Delete items", %{conn: conn} do
+      unique = System.unique_integer([:positive])
+      id = "menu-doc-active-#{unique}"
+
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      # Inject list view + active doc directly to avoid async sync races and
+      # the push_patch routing limitation in the test router.
+      :sys.replace_state(view.pid, fn state ->
+        active_doc = %{
+          "id" => id,
+          "name" => "Menu Doc #{unique}",
+          "status" => nil,
+          "inserted_at" => nil,
+          "modifiedTime" => nil,
+          "data" => nil,
+          "path" => nil
+        }
+
+        new_socket =
+          state.socket
+          |> Phoenix.Component.assign(view_mode: "list")
+          |> Phoenix.Component.assign(documents: [active_doc])
+          |> Phoenix.Component.assign(loaded: true, loading: false, google_connected: true)
+
+        %{state | socket: new_socket}
+      end)
+
+      html = render(view)
+
+      # Table row menu wrapper exists with the doc's id.
+      assert html =~ "doc-row-menu-#{id}"
+      # Edit action is a link opening the Google Docs editor in a new tab.
+      assert html =~ "https://docs.google.com/document/d/#{id}/edit"
+      assert html =~ ~s(target="_blank")
+      assert html =~ "hero-pencil-square"
+      # Export PDF + Delete are buttons wired to this doc's id.
+      assert html =~ ~s(phx-click="export_pdf")
+      assert html =~ ~s(phx-click="delete")
+      assert html =~ ~s(phx-value-id="#{id}")
+      assert html =~ "hero-trash"
+      # No Restore action in active mode.
+      refute html =~ ~s(phx-click="restore")
+    end
+
+    test "trashed mode: table row menu renders View, Export PDF, Restore items", %{conn: conn} do
+      unique = System.unique_integer([:positive])
+      id = "menu-doc-trashed-#{unique}"
+
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      # Inject list view, trashed status, and a fake trashed doc directly
+      # into the LV assigns. This avoids both the push_patch routing limitation
+      # AND race conditions with the async sync_from_drive `:sync_complete`.
+      :sys.replace_state(view.pid, fn state ->
+        trashed_doc = %{
+          "id" => id,
+          "name" => "Trash Doc #{unique}",
+          "status" => "trashed",
+          "inserted_at" => nil,
+          "modifiedTime" => nil,
+          "data" => nil,
+          "path" => nil
+        }
+
+        new_socket =
+          state.socket
+          |> Phoenix.Component.assign(view_mode: "list")
+          |> Phoenix.Component.assign(status_mode: "trashed")
+          |> Phoenix.Component.assign(trashed_documents: [trashed_doc])
+          |> Phoenix.Component.assign(loaded: true, loading: false, google_connected: true)
+
+        %{state | socket: new_socket}
+      end)
+
+      html = render(view)
+
+      assert html =~ "doc-row-menu-#{id}"
+      # View action is a link to the Google Docs editor (trashed mode).
+      assert html =~ "https://docs.google.com/document/d/#{id}/edit"
+      assert html =~ "hero-eye"
+      # Restore is wired to this doc's id; Delete is absent in trashed mode.
+      assert html =~ ~s(phx-click="restore")
+      assert html =~ ~s(phx-value-id="#{id}")
+      assert html =~ "hero-arrow-uturn-left"
+      refute html =~ ~s(phx-click="delete")
+    end
+
+    test "active mode: card view menu renders Edit, Export PDF, Delete items", %{conn: conn} do
+      unique = System.unique_integer([:positive])
+      id = "menu-doc-card-#{unique}"
+
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      # Inject card view (default) + active doc directly to avoid async sync races.
+      :sys.replace_state(view.pid, fn state ->
+        active_doc = %{
+          "id" => id,
+          "name" => "Card Doc #{unique}",
+          "status" => nil,
+          "inserted_at" => nil,
+          "modifiedTime" => nil,
+          "data" => nil,
+          "path" => nil
+        }
+
+        new_socket =
+          state.socket
+          |> Phoenix.Component.assign(view_mode: "cards")
+          |> Phoenix.Component.assign(documents: [active_doc])
+          |> Phoenix.Component.assign(loaded: true, loading: false, google_connected: true)
+
+        %{state | socket: new_socket}
+      end)
+
+      html = render(view)
+
+      assert html =~ "doc-card-menu-#{id}"
+      assert html =~ "hero-pencil-square"
+      assert html =~ "hero-arrow-down-tray"
+      assert html =~ "hero-trash"
+    end
+  end
+
   describe "media picker round-trip" do
     test "returning from media selector restores template state and applies image selection",
          %{conn: conn} do

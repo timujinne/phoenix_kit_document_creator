@@ -14,6 +14,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
   import PhoenixKitDocumentCreator.Web.Components.CreateDocumentModal
   import PhoenixKitWeb.Components.Core.Pagination
   import PhoenixKitWeb.Components.Core.TableDefault
+  import PhoenixKitWeb.Components.Core.TableRowMenu
 
   alias PhoenixKit.Users.Auth
   alias PhoenixKitDocumentCreator.Documents
@@ -82,7 +83,8 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
        unfiled_working: false,
        # Mobile-only: filters/search are collapsed behind a "Filters" toggle on
        # narrow screens (< sm). Always visible on sm+ regardless of this flag.
-       show_filters: false
+       show_filters: false,
+       sort: %{by: :modified, dir: :desc}
      )}
   end
 
@@ -816,6 +818,17 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
     {:noreply, assign(socket, warning: nil)}
   end
 
+  def handle_event("toggle_sort", %{"by" => by}, socket) do
+    case parse_sort_field(by) do
+      nil ->
+        {:noreply, socket}
+
+      field ->
+        sort = toggle_sort(socket.assigns.sort, field)
+        {:noreply, assign(socket, sort: sort, page: 1)}
+    end
+  end
+
   # ── Event helpers ──────────────────────────────────────────────────
 
   defp do_modal_select_template(socket, file_id, name) do
@@ -1259,11 +1272,12 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
               {_, _} -> @documents
             end %>
           <% filtered_files = filter_files(files_for_mode, @filters) %>
-          <% total_count = length(filtered_files) %>
+          <% sorted_files = sort_files(filtered_files, @sort) %>
+          <% total_count = length(sorted_files) %>
           <% total_pages = max(1, ceil(total_count / per_page())) %>
           <% current_page = min(@page, total_pages) %>
           <% paged_files =
-            filtered_files
+            sorted_files
             |> Enum.drop((current_page - 1) * per_page())
             |> Enum.take(per_page()) %>
           <% list_base =
@@ -1438,7 +1452,8 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
       types_by_category: types_by_category,
       type_names: type_names,
       # Resolved off the render path when the trashed lists change; read here.
-      deleted_by_names: assigns.deleted_by_names
+      deleted_by_names: assigns.deleted_by_names,
+      sort: assigns.sort
     }
   end
 
@@ -1626,64 +1641,71 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
             {format_deleted_info(file["data"]["deleted"], @deleted_by_names)}
           </p>
         </div>
-        <div class="flex gap-1 px-2 pb-2">
-          <%= if @status_mode == "trashed" do %>
-            <a
-              href={GoogleDocsClient.get_edit_url(file["id"])}
-              target="_blank"
-              class="flex-1 btn btn-ghost btn-xs py-2"
-            >
-              <span class="hero-eye w-3 h-3" /> {gettext("View")}
-            </a>
-          <% else %>
-            <a
-              href={GoogleDocsClient.get_edit_url(file["id"])}
-              target="_blank"
-              class="flex-1 btn btn-ghost btn-xs py-2"
-            >
-              <span class="hero-pencil-square w-3 h-3" /> {gettext("Edit")}
-            </a>
-          <% end %>
-          <button
-            class="flex-1 btn btn-ghost btn-xs py-2"
-            phx-click="export_pdf"
-            phx-value-id={file["id"]}
-            phx-value-name={file["name"]}
-            phx-disable-with={gettext("Exporting…")}
-          >
-            <span class="hero-arrow-down-tray w-3 h-3" /> {gettext("PDF")}
-          </button>
-          <%= if @status_mode == "trashed" do %>
-            <button
-              class="btn btn-ghost btn-xs py-2 text-success"
-              phx-click="restore"
+        <div class="flex justify-end px-2 pb-2">
+          <.table_row_menu id={"doc-card-menu-#{file["id"]}"} label={gettext("Actions")}>
+            <%= if @status_mode == "trashed" do %>
+              <.table_row_menu_link
+                href={GoogleDocsClient.get_edit_url(file["id"])}
+                target="_blank"
+                icon="hero-eye"
+                label={gettext("View")}
+              />
+            <% else %>
+              <.table_row_menu_link
+                href={GoogleDocsClient.get_edit_url(file["id"])}
+                target="_blank"
+                icon="hero-pencil-square"
+                label={gettext("Edit")}
+              />
+            <% end %>
+            <.table_row_menu_button
+              phx-click="export_pdf"
               phx-value-id={file["id"]}
-              title={gettext("Restore")}
-              phx-disable-with={gettext("Restoring…")}
-            >
-              <span class="hero-arrow-uturn-left w-3 h-3" />
-            </button>
-          <% else %>
-            <button
-              class="btn btn-ghost btn-xs py-2 text-error"
-              phx-click="delete"
-              phx-value-id={file["id"]}
-              phx-disable-with={gettext("Deleting…")}
-            >
-              <span class="hero-trash w-3 h-3" />
-            </button>
-          <% end %>
+              phx-value-name={file["name"]}
+              phx-disable-with={gettext("Exporting…")}
+              icon="hero-arrow-down-tray"
+              label={gettext("Export PDF")}
+            />
+            <.table_row_menu_divider />
+            <%= if @status_mode == "trashed" do %>
+              <.table_row_menu_button
+                phx-click="restore"
+                phx-value-id={file["id"]}
+                phx-disable-with={gettext("Restoring…")}
+                icon="hero-arrow-uturn-left"
+                label={gettext("Restore")}
+                variant="success"
+              />
+            <% else %>
+              <.table_row_menu_button
+                phx-click="delete"
+                phx-value-id={file["id"]}
+                phx-disable-with={gettext("Deleting…")}
+                icon="hero-trash"
+                label={gettext("Delete")}
+                variant="error"
+              />
+            <% end %>
+          </.table_row_menu>
         </div>
       </:card_body>
       <.table_default_header>
         <.table_default_row>
-          <.table_default_header_cell>{gettext("Name")}</.table_default_header_cell>
-          <.table_default_header_cell>{gettext("Status")}</.table_default_header_cell>
+          <.sort_header_cell field={:name} sort={@sort} event="toggle_sort">
+            {gettext("Name")}
+          </.sort_header_cell>
+          <.sort_header_cell field={:status} sort={@sort} event="toggle_sort">
+            {gettext("Status")}
+          </.sort_header_cell>
           <.table_default_header_cell :if={@status_mode == "trashed"}>
             {gettext("Deleted")}
           </.table_default_header_cell>
-          <.table_default_header_cell>{gettext("Created")}</.table_default_header_cell>
-          <.table_default_header_cell>{gettext("Modified")}</.table_default_header_cell>
+          <.sort_header_cell field={:created} sort={@sort} event="toggle_sort">
+            {gettext("Created")}
+          </.sort_header_cell>
+          <.sort_header_cell field={:modified} sort={@sort} event="toggle_sort">
+            {gettext("Modified")}
+          </.sort_header_cell>
           <.table_default_header_cell class="text-right">
             {gettext("Actions")}
           </.table_default_header_cell>
@@ -1760,59 +1782,51 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
               {format_time(file["modifiedTime"])}
             </.table_default_cell>
             <.table_default_cell class="text-right">
-              <div class="flex gap-1 justify-end">
+              <.table_row_menu id={"doc-row-menu-#{file["id"]}"} label={gettext("Actions")}>
                 <%= if @status_mode == "trashed" do %>
-                  <a
+                  <.table_row_menu_link
                     href={GoogleDocsClient.get_edit_url(file["id"])}
                     target="_blank"
-                    class="btn btn-ghost btn-xs"
-                    title={gettext("View")}
-                  >
-                    <span class="hero-eye w-3.5 h-3.5" />
-                  </a>
+                    icon="hero-eye"
+                    label={gettext("View")}
+                  />
                 <% else %>
-                  <a
+                  <.table_row_menu_link
                     href={GoogleDocsClient.get_edit_url(file["id"])}
                     target="_blank"
-                    class="btn btn-ghost btn-xs"
-                    title={gettext("Edit")}
-                  >
-                    <span class="hero-pencil-square w-3.5 h-3.5" />
-                  </a>
+                    icon="hero-pencil-square"
+                    label={gettext("Edit")}
+                  />
                 <% end %>
-                <button
-                  class="btn btn-ghost btn-xs"
+                <.table_row_menu_button
                   phx-click="export_pdf"
                   phx-value-id={file["id"]}
                   phx-value-name={file["name"]}
-                  title={gettext("Export PDF")}
                   phx-disable-with={gettext("Exporting…")}
-                >
-                  <span class="hero-arrow-down-tray w-3.5 h-3.5" />
-                </button>
+                  icon="hero-arrow-down-tray"
+                  label={gettext("Export PDF")}
+                />
+                <.table_row_menu_divider />
                 <%= if @status_mode == "trashed" do %>
-                  <button
-                    class="btn btn-ghost btn-xs text-success gap-1"
+                  <.table_row_menu_button
                     phx-click="restore"
                     phx-value-id={file["id"]}
-                    title={gettext("Restore")}
                     phx-disable-with={gettext("Restoring…")}
-                  >
-                    <span class="hero-arrow-uturn-left w-3.5 h-3.5" />
-                    <span class="text-xs">{gettext("Restore")}</span>
-                  </button>
+                    icon="hero-arrow-uturn-left"
+                    label={gettext("Restore")}
+                    variant="success"
+                  />
                 <% else %>
-                  <button
-                    class="btn btn-ghost btn-xs text-error"
+                  <.table_row_menu_button
                     phx-click="delete"
                     phx-value-id={file["id"]}
-                    title={gettext("Delete")}
                     phx-disable-with={gettext("Deleting…")}
-                  >
-                    <span class="hero-trash w-3.5 h-3.5" />
-                  </button>
+                    icon="hero-trash"
+                    label={gettext("Delete")}
+                    variant="error"
+                  />
                 <% end %>
-              </div>
+              </.table_row_menu>
             </.table_default_cell>
           <% end %>
         </.table_default_row>
@@ -2071,6 +2085,79 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
       "#{base}?#{URI.encode_query(params)}"
     end
   end
+
+  # Whitelisted sort-field parser — returns an atom for known fields, nil for
+  # anything else. Guards against hostile or typo-ed phx-value-by payloads.
+  defp parse_sort_field("name"), do: :name
+  defp parse_sort_field("created"), do: :created
+  defp parse_sort_field("modified"), do: :modified
+  defp parse_sort_field("status"), do: :status
+  defp parse_sort_field(_), do: nil
+
+  defp toggle_sort(%{by: by, dir: dir}, by), do: %{by: by, dir: flip_dir(dir)}
+  defp toggle_sort(_, new_by), do: %{by: new_by, dir: :asc}
+
+  defp flip_dir(:asc), do: :desc
+  defp flip_dir(:desc), do: :asc
+
+  # Sorts a file list in memory according to the current sort assign.
+  # - :name     — case-insensitive string compare on "name"
+  # - :created  — ISO 8601 / NaiveDateTime compare on "inserted_at"
+  # - :modified — ISO 8601 / NaiveDateTime compare on "modifiedTime"
+  # - :status   — string compare on "status"
+  # Nil values always sort last regardless of direction.
+  defp sort_files(files, %{by: by, dir: dir}) do
+    {with_val, nils} =
+      files
+      |> Enum.map(&{&1, sort_value(&1, by)})
+      |> Enum.split_with(fn {_file, value} -> value != nil end)
+
+    with_val
+    |> Enum.sort_by(fn {_file, value} -> value end, dir)
+    |> Enum.map(fn {file, _value} -> file end)
+    |> Kernel.++(Enum.map(nils, fn {file, _value} -> file end))
+  end
+
+  defp sort_value(file, :name) do
+    case file["name"] do
+      nil -> nil
+      name -> String.downcase(name)
+    end
+  end
+
+  defp sort_value(file, :created) do
+    parse_sort_time(file["inserted_at"])
+  end
+
+  defp sort_value(file, :modified) do
+    parse_sort_time(file["modifiedTime"])
+  end
+
+  defp sort_value(file, :status), do: file["status"]
+
+  # Parse ISO 8601 strings and NaiveDateTime/DateTime structs into a
+  # comparable string (ISO format sorts lexicographically). Returns nil
+  # for unparseable / missing values so they land at the end.
+  defp parse_sort_time(nil), do: nil
+
+  defp parse_sort_time(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
+
+  defp parse_sort_time(%NaiveDateTime{} = ndt), do: NaiveDateTime.to_iso8601(ndt)
+
+  defp parse_sort_time(iso) when is_binary(iso) do
+    case DateTime.from_iso8601(iso) do
+      {:ok, _dt, _offset} ->
+        iso
+
+      _ ->
+        case NaiveDateTime.from_iso8601(iso) do
+          {:ok, _ndt} -> iso
+          _ -> nil
+        end
+    end
+  end
+
+  defp parse_sort_time(_), do: nil
 
   defp filter_files(files, filters) do
     files
