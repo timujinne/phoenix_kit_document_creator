@@ -153,8 +153,11 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClientMediaHeightTest do
 
       height_magnitude = get_in(insert_body, [:objectSize, :height, :magnitude])
 
-      assert is_number(height_magnitude) and height_magnitude > 0,
-             "expected a positive height magnitude but got: #{inspect(height_magnitude)}"
+      # 400x600 source at 400px display width: scale_height(400, 400, 600) = 600px
+      # → 600 * 0.75 = 450.0 PT. Pin the exact value so a wrong-but-positive
+      # regression is also caught.
+      assert height_magnitude == 450.0,
+             "expected height 450.0 PT, got: #{inspect(height_magnitude)}"
     end
   end
 end
