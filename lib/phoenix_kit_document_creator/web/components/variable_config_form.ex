@@ -14,10 +14,11 @@ defmodule PhoenixKitDocumentCreator.Web.Components.VariableConfigForm do
 
   def config_form(%{variable: %{type: :image}} = assigns) do
     current_annotated =
-      case assigns.variable.config[:annotated] || assigns.variable.config["annotated"] do
-        false -> false
-        _ -> true
-      end
+      Map.get(
+        assigns.variable.config,
+        :annotated,
+        Map.get(assigns.variable.config, "annotated", true)
+      )
 
     assigns = assign(assigns, current_annotated: current_annotated)
 
@@ -67,10 +68,11 @@ defmodule PhoenixKitDocumentCreator.Web.Components.VariableConfigForm do
     current_columns = to_string(current_columns)
 
     current_annotated =
-      case assigns.variable.config[:annotated] || assigns.variable.config["annotated"] do
-        false -> false
-        _ -> true
-      end
+      Map.get(
+        assigns.variable.config,
+        :annotated,
+        Map.get(assigns.variable.config, "annotated", true)
+      )
 
     assigns =
       assign(assigns,

@@ -98,13 +98,24 @@ defmodule PhoenixKitDocumentCreator.AnnotatedFlagTest do
       assert html =~ ~s(checked)
     end
 
-    test "image: toggle is unchecked when annotated is false" do
+    test "image: toggle is unchecked when annotated is false (string key)" do
       html =
         render_component(&VariableConfigForm.config_form/1,
           variable: %{name: "logo", type: :image, config: %{"annotated" => false}}
         )
 
       # hidden false input must be present; checkbox must not carry checked attr
+      assert html =~ ~s(value="false")
+      refute html =~ ~s(checked="checked")
+      refute html =~ ~s( checked>)
+    end
+
+    test "image: toggle is unchecked when annotated is false (atom key)" do
+      html =
+        render_component(&VariableConfigForm.config_form/1,
+          variable: %{name: "logo", type: :image, config: %{annotated: false}}
+        )
+
       assert html =~ ~s(value="false")
       refute html =~ ~s(checked="checked")
       refute html =~ ~s( checked>)
@@ -137,13 +148,28 @@ defmodule PhoenixKitDocumentCreator.AnnotatedFlagTest do
       assert html =~ ~s(checked)
     end
 
-    test "image_list: toggle is unchecked when annotated is false" do
+    test "image_list: toggle is unchecked when annotated is false (string key)" do
       html =
         render_component(&VariableConfigForm.config_form/1,
           variable: %{
             name: "photos",
             type: :image_list,
             config: %{"annotated" => false, "separator" => "newline"}
+          }
+        )
+
+      assert html =~ ~s(value="false")
+      refute html =~ ~s(checked="checked")
+      refute html =~ ~s( checked>)
+    end
+
+    test "image_list: toggle is unchecked when annotated is false (atom key)" do
+      html =
+        render_component(&VariableConfigForm.config_form/1,
+          variable: %{
+            name: "photos",
+            type: :image_list,
+            config: %{annotated: false, separator: :newline}
           }
         )
 
