@@ -195,6 +195,7 @@ defmodule PhoenixKitDocumentCreator.Documents do
       {"default_width_px", v} -> {"default_width_px", parse_integer(v)}
       {"max_count", v} -> {"max_count", parse_integer_or_nil(v)}
       {"columns", v} -> {"columns", parse_columns(v)}
+      {"annotated", v} -> {"annotated", parse_bool(v)}
       {k, v} -> {k, v}
     end)
     |> Enum.reject(fn {_k, v} -> v == :skip end)
@@ -239,6 +240,14 @@ defmodule PhoenixKitDocumentCreator.Documents do
   end
 
   defp parse_columns(_), do: 1
+
+  # Coerces annotated values from form strings ("true"/"false") to booleans.
+  # Falls back to true (the safe default) for unrecognised inputs.
+  defp parse_bool(true), do: true
+  defp parse_bool(false), do: false
+  defp parse_bool("true"), do: true
+  defp parse_bool("false"), do: false
+  defp parse_bool(_), do: true
 
   @doc "List templates from the local DB. Returns maps compatible with the LiveView."
   @spec list_templates_from_db() :: [map()]

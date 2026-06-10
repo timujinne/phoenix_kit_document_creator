@@ -98,6 +98,7 @@ defmodule PhoenixKitDocumentCreator.VariableTest do
       assert cfg.opacity == 1.0
       assert cfg.z_index == 0
       assert cfg.default_width_px == 400
+      assert cfg.annotated == true
     end
 
     test "includes opacity and z_index for :image_list" do
@@ -107,6 +108,7 @@ defmodule PhoenixKitDocumentCreator.VariableTest do
       assert cfg.default_width_px == 400
       assert cfg.separator == :newline
       assert cfg.max_count == nil
+      assert cfg.annotated == true
     end
   end
 
