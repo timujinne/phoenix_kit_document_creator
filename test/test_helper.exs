@@ -13,6 +13,11 @@ alias PhoenixKitDocumentCreator.Test.Repo, as: TestRepo
 db_config = Application.get_env(:phoenix_kit_document_creator, TestRepo, [])
 db_name = db_config[:database] || "phoenix_kit_document_creator_test"
 
+# S014: refuse before anything else touches the database — see
+# PhoenixKitDocumentCreator.Test.LiveDatabaseGuard's moduledoc for why this
+# exists alongside (not instead of) the external `pk-test` wrapper.
+PhoenixKitDocumentCreator.Test.LiveDatabaseGuard.check!(db_name)
+
 db_check =
   try do
     case System.cmd("psql", ["-lqt"], stderr_to_stdout: true) do
