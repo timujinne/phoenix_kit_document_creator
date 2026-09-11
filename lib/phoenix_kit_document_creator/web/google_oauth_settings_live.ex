@@ -14,9 +14,9 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
 
   alias PhoenixKit.Integrations
   alias PhoenixKit.Settings
-  alias PhoenixKit.Utils.Routes
   alias PhoenixKitDocumentCreator.Documents
   alias PhoenixKitDocumentCreator.GoogleDocsClient
+  alias PhoenixKitDocumentCreator.Paths
   alias PhoenixKitDocumentCreator.Web.Helpers
 
   @impl true
@@ -363,12 +363,12 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
             provider="google"
             compact={true}
             on_select="select_connection"
-            empty_url={Routes.path("/admin/settings/integrations/website/new")}
+            empty_url={Paths.new_integration()}
           />
 
           <p class="text-xs text-base-content/50 mt-2">
             {gettext("Manage your Google connections in")}
-            <a href={Routes.path("/admin/settings/integrations/website")} class="link">{gettext("Settings → Integrations")}</a>.
+            <a href={Paths.integrations()} class="link">{gettext("Settings → Integrations")}</a>.
           </p>
         </div>
       </div>

@@ -1,3 +1,30 @@
+## 0.9.2 - 2026-09-11
+
+### Fixed
+
+- Core 2.21.3 renamed the website-wide integrations page from
+  `/admin/settings/integrations/website` to `/admin/settings/integrations`
+  (the `/website` segment only existed to disambiguate it from the personal
+  page, which has since moved to `/profile/settings/integrations`). This
+  module's two "manage connections" links (added in 0.9.1) still pointed at
+  the old path, which no longer 404s — it matches core's
+  `/admin/settings/integrations/:uuid` edit route with `uuid = "website"`,
+  raises `Ecto.Query.CastError`, and surfaces as a LiveView reload loop. Both
+  links now go through new `Paths.integrations/0` / `Paths.new_integration/0`
+  helpers pointing at the renamed path (#46).
+- Replaced the test suite's `psql -lqt` database-reachability check with
+  core's `PhoenixKit.TestSupport.PostgresPreflight` where available. The old
+  check ran over a unix socket as the shell's user, so a misconfigured role
+  for TCP connections (e.g. no `postgres` role on a Homebrew install) reported
+  the database as present and only failed later as a pool checkout timeout
+  that read like flakiness; the preflight makes one bounded connection with
+  the repo's own credentials and prints the actual reason (#45).
+
+### Changed
+
+- Upgraded locked dependencies: `phoenix_kit` 2.21.1 → 2.22.16, `leaf` 0.6.1 →
+  0.7.0, `ranch` 2.2.1 → 2.3.0.
+
 ## 0.9.1 - 2026-09-07
 
 ### Fixed
