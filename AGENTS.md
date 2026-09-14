@@ -13,7 +13,7 @@ uses the Drive export endpoint. Templates are organised by a Category → Type
 taxonomy with per-category presets, and documents can be composed from several
 template sections.
 
-- **Depends on:** `phoenix_kit` `~> 2.4` (Hex) — Module behaviour, Settings,
+- **Depends on:** `phoenix_kit` `~> 2.21 and >= 2.21.3` (Hex) — Module behaviour, Settings,
   Integrations, Activity, PubSubHelper, `Utils.Routes`, `Utils.Slug`,
   `Utils.Multilang`, `SchemaPrefix`, `Modules.Storage`, `Modules.Languages`,
   core web components. Plus `phoenix_live_view ~> 1.2`, `req ~> 0.5`,
@@ -63,7 +63,7 @@ Deliberate non-features. Don't reintroduce them without checking first.
 mix deps.get
 createdb phoenix_kit_document_creator_test   # once; DB-backed tests are tagged :integration and auto-skip without it
 mix test
-mix precommit                # compile --warnings-as-errors + format + credo --strict + dialyzer; run before every commit
+mix precommit                # compile --warnings-as-errors, unused-lock + hex.audit checks, format --check-formatted + credo --strict + dialyzer, then the full test suite; run before every commit
 ```
 
 `phoenix_kit*` deps resolve from Hex. To run against a local checkout, export
@@ -77,9 +77,8 @@ exported before the first `mix test` (a stale lock aborts on the optional
 PHOENIX_KIT_PATH=../phoenix_kit mix deps.get && PHOENIX_KIT_PATH=../phoenix_kit mix test
 ```
 
-`mix precommit` additionally runs `deps.unlock --check-unused` and
-`mix hex.audit`. `mix quality` / `mix quality.ci` are the format+credo+dialyzer
-subsets.
+`mix quality` (rewrites formatting) and `mix quality.ci` (checks it) are the
+format+credo+dialyzer subsets of `mix precommit`.
 
 Gettext catalogues:
 
@@ -132,10 +131,12 @@ mix gettext.extract --merge priv/gettext
 - **`enabled?/0` must `rescue` and `catch :exit`.** Module discovery runs early
   in boot, before Settings may be ready, and the test sandbox can exit the pool
   checkout under a caller — both paths must return `false` rather than crash.
-- **Activity logging must not crash the caller.** Every mutating context
-  function logs through the `log_activity/1` helper in `Documents`, which guards
-  with `Code.ensure_loaded?(PhoenixKit.Activity)`. Never call
-  `PhoenixKit.Activity.log/1` directly from anywhere else. Mutating functions
+- **Activity logging must not crash the caller.** Every call to
+  `PhoenixKit.Activity.log/1` sits behind a
+  `Code.ensure_loaded?(PhoenixKit.Activity)` guard: the `log_activity/1`
+  helpers in `Documents` and `Taxonomy`, plus the two legacy-migration sites in
+  `GoogleDocsClient` and the top-level module. Route new logging through one of
+  the two helpers rather than adding a fifth guarded call. Mutating functions
   take `opts` with `:actor_uuid` for attribution; LiveViews thread it via
   `Web.Helpers.actor_opts/1`.
 - **Soft-delete sentinels.** Files use a four-value `status`:
@@ -368,11 +369,17 @@ Rules for the chain:
 
 ## Testing
 
-Test database `phoenix_kit_document_creator_test`. `test_helper.exs` probes for
-it with `psql -lqt` (falling back to a connect attempt when `psql` is absent)
-and, when it is missing, excludes `:integration` so unit tests — schemas,
-changesets, `Variable`, `Errors`, `Paths`, the pin/prefix conformance guards —
-still run.
+Test database `phoenix_kit_document_creator_test`. Before anything connects,
+`test_helper.exs` passes the resolved database name to
+`Test.LiveDatabaseGuard.check!/1`, which raises for any name ending in `_dev` or
+`_prod` — `PGDATABASE` is honoured, so a dev shell's export would otherwise
+point the migration run at a real database. It then makes one
+bounded connection attempt with the repo's own credentials through core's
+`PhoenixKit.TestSupport.PostgresPreflight` (falling back to a plain
+`start_link` attempt on a core that predates it) and, when the database is
+unreachable, prints the classified reason and excludes `:integration` so unit
+tests — schemas, changesets, `Variable`, `Errors`, `Paths`, the pin/prefix
+conformance guards — still run.
 
 With a database, the helper builds the schema the way a host does:
 `PhoenixKit.Migration.ensure_current(TestRepo, log: false)` for core's chain,
@@ -401,15 +408,17 @@ Two tags gate optional behaviour: `:integration` (needs Postgres) and
 `:requires_phoenix_kit_i18n_api` (excluded when the resolved core pre-dates
 `PhoenixKit.Dashboard.Tab.localized_label/1`).
 
-`PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT` and `PGDATABASE` are all honoured,
-defaulting to `postgres` / `postgres` / `localhost` / `5432`. On a machine with
-no `postgres` role, export `PGUSER` — otherwise the connection fails as pool
-timeouts that read like flakiness rather than a config problem.
+`config/test.exs` honours `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT` and
+`PGDATABASE`, defaulting to `postgres` / `postgres` / `localhost` / `5432`. On
+a machine with no `postgres` role, export `PGUSER`; the preflight reports the
+rejected credentials up front instead of letting the pool time out later.
 
 Two conformance tests are load-bearing and should not be relaxed:
 `core_pin_conformance_test.exs` (the `:phoenix_kit` requirement must stay
-two-segment `~> 2.4` — a three-segment `~> 2.4.0` breaks consumers, never this
-repo) and `schema_prefix_conformance_test.exs` (every table-backed schema must
+`~> 2.21 and >= 2.21.3` — the floor is where core's website-wide Integrations
+page took its current path, and a three-segment `~> 2.21.3` would pin a single
+minor and break consumers, never this repo) and
+`schema_prefix_conformance_test.exs` (every table-backed schema must
 `use PhoenixKit.SchemaPrefix`).
 
 ## Feature notes

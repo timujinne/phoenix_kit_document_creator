@@ -97,7 +97,12 @@ defmodule PhoenixKitDocumentCreator.Web.Components.CreateDocumentModal do
       </div>
     </div>
 
-    <form phx-submit="modal_create_from_template" phx-change="update_variable_config" class="mt-4 space-y-3">
+    <form
+      id="create-document-modal-form"
+      phx-submit="modal_create_from_template"
+      phx-change="update_variable_config"
+      class="mt-4 space-y-3"
+    >
       <input type="hidden" name="template_id" value={@selected_template["id"]} />
 
       <div class="fieldset">

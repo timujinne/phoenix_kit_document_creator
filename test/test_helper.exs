@@ -13,14 +13,13 @@ alias PhoenixKitDocumentCreator.Test.Repo, as: TestRepo
 db_config = Application.get_env(:phoenix_kit_document_creator, TestRepo, [])
 db_name = db_config[:database] || "phoenix_kit_document_creator_test"
 
-# S014: refuse before anything else touches the database — see
-# PhoenixKitDocumentCreator.Test.LiveDatabaseGuard's moduledoc for why this
-# exists alongside (not instead of) the external `pk-test` wrapper.
+# Refuse a `_dev` / `_prod` database before anything else touches it — see
+# PhoenixKitDocumentCreator.Test.LiveDatabaseGuard's moduledoc.
 PhoenixKitDocumentCreator.Test.LiveDatabaseGuard.check!(db_name)
 
-# The preflight ships in core, and this module's core floor (`~> 2.0`)
+# The preflight ships in core (2.22.3+), and this module's core floor
 # predates it — so it is used when the running core has it, and otherwise
-# this falls through to exactly the previous behaviour.
+# this falls through to a plain connect attempt below.
 db_check =
   if Code.ensure_loaded?(PhoenixKit.TestSupport.PostgresPreflight) do
     # One classified connection attempt, with the repo's OWN credentials and
@@ -56,11 +55,10 @@ repo_available =
       {:ok, _} = TestRepo.start_link()
 
       # Build the schema directly from core's versioned migrations —
-      # same call the host app makes in production. Core's V40 creates
-      # the `uuid-ossp` / `pgcrypto` extensions + `uuid_generate_v7()`
-      # function; V03/V04 create `phoenix_kit_settings`; V86/V94/V110
-      # create this module's `phoenix_kit_doc_*` tables; V90 creates
-      # `phoenix_kit_activities`. No module-owned DDL.
+      # same call the host app makes in production. Core's V135 squash
+      # baseline creates the extensions, `phoenix_kit_settings`,
+      # `phoenix_kit_activities` and this module's `phoenix_kit_doc_*`
+      # tables; only the module-owned chain below adds DDL on top.
       #
       # `ensure_current/2` (core 1.7.105+ / phoenix_kit#515) re-applies
       # any newly-shipped Vxxx migrations on every boot by passing a
@@ -70,18 +68,13 @@ repo_available =
       # recorded in `schema_migrations` — see
       # `dev_docs/migration_cleanup.md` for the staleness story.
       #
-      # Standalone runs against Hex `phoenix_kit ~> 1.7` may fail at
-      # boot if the published Hex version pre-dates `ensure_current/2`
-      # itself or a column this module's schemas reference. CI greens
-      # once core 1.7.105 publishes and `mix deps.update phoenix_kit`
-      # bumps the lock. The canonical local test channel is via
-      # `phoenix_kit_parent` (path-dep `override: true` resolves
-      # `phoenix_kit` to the local checkout). See ~/.claude memory
-      # `feedback_run_tests_via_parent.md`.
+      # To run against an unreleased core, export PHOENIX_KIT_PATH (see
+      # `pk_dep/3` in mix.exs); the pinned Hex core already carries
+      # `ensure_current/2`.
       PhoenixKit.Migration.ensure_current(TestRepo, log: false)
 
-      # The module-owned chain (V1: documents.project_uuid), version-keyed
-      # so a bump re-applies — the projects-repo pattern.
+      # The module-owned chain, keyed on `Schema.current_version/0` so a
+      # version bump re-applies on the next run.
       Ecto.Migrator.run(
         TestRepo,
         [
@@ -98,7 +91,7 @@ repo_available =
     rescue
       e ->
         IO.puts("""
-        \n  Could not connect to test database — integration tests excluded.           The reason is printed above.
+        \n  Could not start the test database "#{db_name}" — integration tests excluded.
            Error: #{Exception.message(e)}
         """)
 
@@ -106,7 +99,7 @@ repo_available =
     catch
       :exit, reason ->
         IO.puts("""
-        \n  Could not connect to test database — integration tests excluded.           The reason is printed above.
+        \n  Could not start the test database "#{db_name}" — integration tests excluded.
            Error: #{inspect(reason)}
         """)
 
@@ -161,8 +154,8 @@ end
 # return shape (`{:ok, %{uuid: _}}`), which at the time existed only in
 # unpublished core, so a standalone Hex `~> 1.7` run emitted shape
 # mismatches. The comment said to drop the exclusion "once the matching
-# core version is published" — that happened at core 2.0, and this package
-# has pinned `{:phoenix_kit, "~> 2.0"}` since. Every version the pin can
+# core version is published" — that happened at core 2.0, and this package's
+# floor has been above that ever since. Every version the pin can
 # resolve carries the shape, so the exclusion had stopped protecting
 # anything and was simply hiding four passing tests from every run.
 exclude = if repo_available, do: [], else: [:integration]

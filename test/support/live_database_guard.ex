@@ -1,55 +1,50 @@
 defmodule PhoenixKitDocumentCreator.Test.LiveDatabaseGuard do
   @moduledoc """
-  S014: this container's shell environment leaks `PGDATABASE=phoenix_kit_dev`
-  (and `MIX_ENV=dev`) into every process, including `mix test` run bare, in
-  any working directory (see `/root/bin/pk-test`'s own header comment).
-  `config/test.exs` honors `PGDATABASE` — precisely so the suite CAN target
-  an already-provisioned database when the running role lacks `CREATEDB` —
-  which means a bare `mix test` run in this container silently resolves its
-  test database to the real, live dev database and hands it straight to the
-  Ecto sandbox to migrate and seed.
+  Refuses to boot the suite against a development or production database.
 
-  `pk-test` already refuses this — but it lives OUTSIDE this repo on
-  purpose (a fork shared with an external maintainer must not carry a
-  machine-specific wrapper), so it only protects a caller who remembers to
-  use it. This guard is the same refusal, INSIDE the repo, so `mix test`
-  itself is safe regardless of how it's invoked.
+  `config/test.exs` honors `PGDATABASE` — precisely so the suite can target an
+  already-provisioned database when the running role lacks `CREATEDB`. The
+  flip side is that a `PGDATABASE` exported for a dev shell (conventionally
+  `<app>_dev`) silently becomes the test database, and `test_helper.exs` then
+  runs core's migrations and this module's chain against it before a single
+  test is sandboxed.
 
-  Deliberately NOT the `phoenix_kit_crm`/`phoenix_kit_entities`
-  `SchemaOwnerGuard` pattern (a `schema_migrations` ownership marker):
-  that mechanism only catches a database another *tracked, guard-wearing*
-  package has already stamped — confirmed live (S014 recon) that it reads
-  a database it has never seen, comment-less `schema_migrations` included,
-  as `:ok`. A live dev database populated by ordinary `mix ecto.migrate`
-  is exactly that shape: nothing has ever stamped it, so a marker check
-  alone would wave it through. This guard instead refuses by NAME, against
-  the specific databases this container must never let a test suite touch
-  — the same check `pk-test` already makes, just checked here too.
+  The refusal is by name, on Phoenix's own naming convention: a database
+  ending in `_dev` or `_prod` is never a test database. Two alternatives were
+  rejected:
+
+    * A `schema_migrations` ownership marker (the `SchemaOwnerGuard` pattern
+      used elsewhere in the ecosystem) only recognises a database some
+      guard-carrying package has already stamped. A dev database built by a
+      plain `mix ecto.migrate` carries no marker and would pass.
+    * Requiring `test` in the name would refuse legitimate pre-provisioned
+      databases, such as a CI service container's default `postgres`.
   """
 
-  @known_live_databases ~w(phoenix_kit_dev decor_3d_print_dev phoenixkit_hello_world_dev)
+  @non_test_suffixes ~w(_dev _prod)
 
   defmodule LiveDatabaseError do
     defexception [:message]
   end
 
   @doc """
-  Raises `LiveDatabaseError` if `database` names one of this container's
-  known live databases. Takes the already-resolved name (what
-  `config/test.exs` put in `Application.get_env/2`), not `PGDATABASE`
-  itself — the config file's own fallback-when-unset logic is the single
-  source of truth for what the suite will actually connect to, and
-  duplicating it here would drift the moment either copy changed.
+  Raises `LiveDatabaseError` if `database` ends in `_dev` or `_prod`.
+
+  Takes the already-resolved name (what `config/test.exs` put in
+  `Application.get_env/2`), not `PGDATABASE` itself — the config file's own
+  fallback-when-unset logic is the single source of truth for what the suite
+  will actually connect to, and duplicating it here would drift the moment
+  either copy changed.
   """
   @spec check!(String.t()) :: :ok
   def check!(database) when is_binary(database) do
-    if database in @known_live_databases do
+    if String.ends_with?(database, @non_test_suffixes) do
       raise LiveDatabaseError,
         message: """
-        Test database resolved to #{inspect(database)}, a live database this \
-        container must never let a test suite touch (PGDATABASE leaks into \
-        every shell here — see this module's moduledoc). Unset PGDATABASE, \
-        or point it at an isolated test database instead.\
+        Test database resolved to #{inspect(database)}, which by its name is a \
+        development or production database — the test boot would run \
+        migrations against it. PGDATABASE is honored by config/test.exs; \
+        unset it, or point it at a dedicated test database instead.\
         """
     else
       :ok

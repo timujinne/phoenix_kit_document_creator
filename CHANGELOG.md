@@ -1,3 +1,28 @@
+## 0.9.3 - 2026-09-13
+
+### Changed
+
+- **Requires `phoenix_kit` `>= 2.21.3`** (was `~> 2.4`). The "manage
+  connections" links from 0.9.2 point at `/admin/settings/integrations[/new]`
+  as the website-wide connections page, which is only true from core 2.21.3:
+  2.4–2.18 served the personal page there and 2.19–2.21.2 used a `/website`
+  segment. 0.9.2 on an older core linked to the wrong page.
+- Upgraded locked dependencies: `phoenix_kit` 2.22.16 → 2.23.0, `leaf` 0.7.0 →
+  0.8.0, `etcher` 0.13.1 → 0.13.2, `beamlab_countries` 1.2.0 → 1.2.1.
+
+### Fixed
+
+- Every `phx-change` form (documents filter, template modal language /
+  category / group, per-file taxonomy pickers, create-document modal, preset
+  form) now has a stable id, so LiveView can recover its values after a
+  reconnect. The taxonomy picker ids are keyed apart for the row and card
+  layouts, which render the same file twice.
+- HexDocs "view source" links 404'd since 0.8.0: `source_ref` pointed at
+  `v<version>` tags, but tags have been bare since 0.8.0.
+- The test suite refuses to boot against a database whose name ends in `_dev`
+  or `_prod`. `config/test.exs` honours `PGDATABASE`, so a dev shell's export
+  used to point the test boot's migrations at a real database (#47).
+
 ## 0.9.2 - 2026-09-11
 
 ### Fixed

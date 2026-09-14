@@ -1294,6 +1294,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
           <%!-- Filters: collapsed behind the "Filters" toggle below sm; always
                visible (search full-width then fixed; selects grow + wrap) on sm+. --%>
           <form
+            id="document-creator-filters"
             phx-change="filter"
             class={[
               "flex-wrap items-center gap-2 lg:flex-1",
@@ -1549,7 +1550,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
           <span class="text-xs font-semibold uppercase tracking-wide text-base-content/60">
             {gettext("Language")}
           </span>
-          <form phx-change="template_modal_set_language" class="mt-1">
+          <form id="template-modal-language" phx-change="template_modal_set_language" class="mt-1">
             <select name="language" class="select select-sm w-full">
               <option value="" selected={is_nil(@template_modal_language)}>
                 {gettext("No language")}
@@ -1575,7 +1576,11 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
               <% member =
                 Enum.find(@template_modal_categories, &(&1.category_uuid == cat_uuid)) %>
               <div class="rounded-lg border border-base-200 p-2">
-                <form phx-change="template_modal_toggle_category" phx-value-category_uuid={cat_uuid}>
+                <form
+                  id={"template-modal-category-#{cat_uuid}"}
+                  phx-change="template_modal_toggle_category"
+                  phx-value-category_uuid={cat_uuid}
+                >
                   <label class="label cursor-pointer justify-start gap-2 py-0">
                     <input
                       type="checkbox"
@@ -1588,6 +1593,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
                 </form>
                 <form
                   :if={member}
+                  id={"template-modal-group-#{cat_uuid}"}
                   phx-change="template_modal_set_group"
                   phx-value-category_uuid={cat_uuid}
                   class="pl-6 mt-1"
@@ -2284,6 +2290,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
           not serialize its value (only the phx-value-* attrs would arrive).
         --%>
         <form
+          id={"taxonomy-category-#{if(@card?, do: "card", else: "row")}-#{@file["id"]}"}
           class={@card? && "min-w-0 flex-1 basis-28"}
           phx-change="set_taxonomy_category"
           phx-value-google_doc_id={@file["id"]}
@@ -2314,6 +2321,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
         <%!-- Type select — only shown when a category is chosen --%>
         <form
           :if={@file["category_uuid"]}
+          id={"taxonomy-type-#{if(@card?, do: "card", else: "row")}-#{@file["id"]}"}
           class={@card? && "min-w-0 flex-1 basis-28"}
           phx-change="set_taxonomy_type"
           phx-value-google_doc_id={@file["id"]}

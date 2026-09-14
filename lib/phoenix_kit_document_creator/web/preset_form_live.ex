@@ -224,7 +224,7 @@ defmodule PhoenixKitDocumentCreator.Web.PresetFormLive do
         <span class="font-medium">{Taxonomy.localized_name(@category, @locale)}</span>
       </p>
 
-      <.form for={@form} phx-change="validate" phx-submit="save" class="flex flex-col gap-4">
+      <.form for={@form} id="preset-form" phx-change="validate" phx-submit="save" class="flex flex-col gap-4">
         <.input
           field={@form[:name]}
           type="text"

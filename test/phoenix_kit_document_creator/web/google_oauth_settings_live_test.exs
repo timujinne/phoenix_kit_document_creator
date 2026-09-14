@@ -1,5 +1,7 @@
 defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
-  use PhoenixKitDocumentCreator.LiveCase
+  # StubIntegrations is one named ETS table shared with the LiveView process,
+  # so this file cannot run concurrently with any other StubIntegrations user.
+  use PhoenixKitDocumentCreator.LiveCase, async: false
 
   import ExUnit.CaptureLog
 

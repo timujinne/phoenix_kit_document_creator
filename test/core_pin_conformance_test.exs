@@ -15,24 +15,32 @@ defmodule PhoenixKitDocumentCreator.CorePinConformanceTest do
   Core 1.7 is deliberately excluded: core 2.0.0 squashed the migration chain to
   a V135 floor and this module is verified only against that baseline.
 
-  **The floor moved to 2.4 on 2026-08-14** and core 2.0–2.3 are now rejected on
-  purpose. `Template.changeset/2` calls `PhoenixKit.Utils.Slug.put_slug/3`,
-  which core did not ship until 2.4.0 — so admitting 2.0.x would let a host
-  resolve a core where every save touching `:name` raises
-  `UndefinedFunctionError`. That is the *same class* of consumer-only breakage
-  this test exists to catch, just from the opposite direction: too wide rather
-  than too narrow.
+  **The floor is 2.21.3** and everything older is rejected on purpose:
 
-  Raising the floor is NOT the trap described above. `~> 2.4` is two-segment,
-  so it still admits every later core minor; the forbidden shape is the
-  three-segment `~> 2.4.0`, which would pin to a single minor and is still
-  rejected by the `@must_admit` entries below.
+  - `Template.changeset/2` calls `PhoenixKit.Utils.Slug.put_slug/3`, which
+    core did not ship until 2.4.0 — admitting 2.0.x would let a host resolve
+    a core where every save touching `:name` raises `UndefinedFunctionError`.
+  - `Paths.integrations/0` and `Paths.new_integration/0` link to
+    `/admin/settings/integrations[/new]` as the website-wide connections page.
+    Core 2.4–2.18 served the *personal* page at that path, 2.19–2.21.2 served
+    the website page at `/admin/settings/integrations/website`, and 2.21.3
+    renamed it to the bare path. Admitting anything below 2.21.3 ships a link
+    that lands on a page which cannot show the connection the picker listed.
+
+  Both are the *same class* of consumer-only breakage this test exists to
+  catch, just from the opposite direction: too wide rather than too narrow.
+
+  Raising the floor is NOT the trap described above. `~> 2.21 and >= 2.21.3`
+  is a two-segment `~>` with a patch guard, so it still admits every later
+  core minor; the forbidden shape is the three-segment `~> 2.21.3`, which
+  would pin to a single minor and is rejected by the `@must_admit` entries
+  below.
   """
 
-  @must_admit ["2.4.0", "2.4.7", "2.5.0", "2.9.4"]
-  @must_reject ["1.7.189", "1.7.236", "2.0.0", "2.3.0", "3.0.0"]
+  @must_admit ["2.21.3", "2.21.9", "2.22.0", "2.22.16", "2.30.0"]
+  @must_reject ["1.7.236", "2.0.0", "2.4.0", "2.9.4", "2.18.4", "2.21.2", "3.0.0"]
 
-  test "the :phoenix_kit requirement admits every core 2.4+ and nothing else" do
+  test "the :phoenix_kit requirement admits every core 2.21.3+ and nothing else" do
     requirement = core_requirement()
 
     assert match?({:ok, _parsed}, Version.parse_requirement(requirement)),
@@ -42,7 +50,7 @@ defmodule PhoenixKitDocumentCreator.CorePinConformanceTest do
       assert Version.match?(version, requirement),
              "`:phoenix_kit` requirement #{inspect(requirement)} rejects core #{version}. " <>
                "A pin that excludes a core minor breaks `mix deps.get` for every host " <>
-               "running this module alongside that core. Keep it a two-segment `~> 2.4`."
+               "running this module alongside that core. Keep it `~> 2.21 and >= 2.21.3`."
     end
 
     for version <- @must_reject do
