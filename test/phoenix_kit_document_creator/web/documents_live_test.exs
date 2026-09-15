@@ -829,6 +829,81 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLiveTest do
     end
   end
 
+  describe "open_media_picker with a configured attachments_parent_folder hook" do
+    defmodule ScopeFolderHook do
+      # Runs in the LiveView process, so report back to the registered test.
+      def parent_for(:document_image, actor_uuid, %{template_file_id: template_file_id}) do
+        send(:scope_folder_hook_test, {:hook_called, actor_uuid, template_file_id})
+        {:ok, "11111111-1111-1111-1111-111111111111"}
+      end
+    end
+
+    defmodule MalformedScopeFolderHook do
+      def parent_for(:document_image, _actor_uuid, _subject), do: {:ok, "x&mode=multiple"}
+    end
+
+    test "the media selector URL carries scope_folder=<hook folder>", %{conn: conn} do
+      put_scope_folder_hook(ScopeFolderHook)
+      Process.register(self(), :scope_folder_hook_test)
+
+      scope = fake_scope(user_uuid: "22222222-2222-2222-2222-222222222222")
+      query = open_media_picker_query(put_test_scope(conn, scope))
+
+      assert query["scope_folder"] == "11111111-1111-1111-1111-111111111111"
+
+      assert_received {:hook_called, "22222222-2222-2222-2222-222222222222", "tpl-xyz"}
+    end
+
+    test "a hook answer that is not a UUID adds no param and cannot inject one",
+         %{conn: conn} do
+      put_scope_folder_hook(MalformedScopeFolderHook)
+
+      query = open_media_picker_query(put_test_scope(conn, fake_scope()))
+
+      refute Map.has_key?(query, "scope_folder")
+      assert query["mode"] == "single"
+    end
+
+    test "no scope_folder param when the hook is not configured", %{conn: conn} do
+      query = open_media_picker_query(put_test_scope(conn, fake_scope()))
+
+      refute Map.has_key?(query, "scope_folder")
+    end
+  end
+
+  defp put_scope_folder_hook(hook) do
+    Application.put_env(
+      :phoenix_kit_document_creator,
+      :attachments_parent_folder,
+      {hook, :parent_for}
+    )
+
+    on_exit(fn ->
+      Application.delete_env(:phoenix_kit_document_creator, :attachments_parent_folder)
+    end)
+  end
+
+  defp open_media_picker_query(conn) do
+    {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+    :sys.replace_state(view.pid, fn state ->
+      new_socket =
+        Phoenix.Component.assign(state.socket,
+          modal_open: true,
+          modal_step: "variables",
+          modal_image_values: %{},
+          modal_selected_template: %{"id" => "tpl-xyz", "name" => "Test"}
+        )
+
+      %{state | socket: new_socket}
+    end)
+
+    assert {:error, {:live_redirect, %{to: redirect_url}}} =
+             render_click(view, "open_media_picker", %{"name" => "logo", "mode" => "single"})
+
+    URI.decode_query(URI.parse(redirect_url).query)
+  end
+
   describe "sort_files/2 — assign-level tests (Google not connected)" do
     # Tests for toggle_sort behavior via assigns inspection.
     # Runs in the non-connected state (no StubIntegrations) so there is no

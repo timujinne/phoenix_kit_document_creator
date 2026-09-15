@@ -17,6 +17,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
   import PhoenixKitWeb.Components.Core.TableRowMenu
 
   alias PhoenixKit.Users.Auth
+  alias PhoenixKitDocumentCreator.Attachments
   alias PhoenixKitDocumentCreator.Documents
   alias PhoenixKitDocumentCreator.Errors
   alias PhoenixKitDocumentCreator.GoogleDocsClient
@@ -544,7 +545,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
 
   def handle_event("open_media_picker", %{"name" => var_name, "mode" => mode}, socket) do
     current_path = socket.assigns[:url_path] || "/admin/document-creator"
-    template_file_id = get_in(socket.assigns, [:modal_selected_template, "id"]) || ""
+    template_file_id = get_in(socket.assigns, [:modal_selected_template, "id"])
     existing_image_values = JSON.encode!(socket.assigns.modal_image_values)
 
     return_to =
@@ -553,7 +554,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
         URI.encode_query(%{
           "picking_var" => var_name,
           "picking_mode" => mode,
-          "template_file_id" => template_file_id,
+          "template_file_id" => template_file_id || "",
           "picking_existing" => existing_image_values
         })
 
@@ -564,10 +565,13 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
         _ -> :single
       end
 
+    # `:scope_folder` is validated and encoded by core. A core older than
+    # 2.23.2 ignores the option, and its selector would ignore the param too.
     selector_url =
       MediaSelectorHelper.media_selector_url(return_to,
         mode: mode_atom,
-        filter: :image
+        filter: :image,
+        scope_folder: Attachments.scope_folder(template_file_id, Helpers.actor_uuid(socket))
       )
 
     {:noreply, push_navigate(socket, to: selector_url)}

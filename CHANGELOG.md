@@ -1,3 +1,22 @@
+## 0.9.4 - 2026-09-15
+
+### Added
+
+- Images uploaded from the template image picker can be filed into a
+  host-configured folder: `config :phoenix_kit_document_creator,
+  attachments_parent_folder: {Mod, :fun}`, called as `fun(:document_image,
+  actor_uuid, %{template_file_id: id})` (or `/2`), returning `{:ok,
+  folder_uuid}` or `nil` for today's behaviour (root). No config, no change.
+  The folder is handed to core's media selector as `scope_folder`, so it
+  takes effect only on `phoenix_kit` 2.23.2 or later. Picking an existing file
+  does not move it, and core ignores an answer that is not a live folder. A
+  hook that raises, throws or exits falls back to the root.
+
+### Changed
+
+- Upgraded locked dependencies: `phoenix_kit` 2.23.0 → 2.23.2, `phoenix`
+  1.8.13 → 1.8.14, `tz` 0.28.2 → 0.28.4.
+
 ## 0.9.3 - 2026-09-13
 
 ### Changed

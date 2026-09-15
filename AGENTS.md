@@ -164,6 +164,15 @@ mix gettext.extract --merge priv/gettext
   `:phoenix_kit_document_creator`: `:docs_client` (Drive/Docs client),
   `:integrations_backend`, `:media_module`. Production defaults are the real
   modules.
+- **Host hook: `:attachments_parent_folder`.** A `{Mod, :fun}` under
+  `:phoenix_kit_document_creator`, resolved by `Attachments.scope_folder/2`
+  when the template image picker opens (never in `mount/3`). It is called as
+  `fun(:document_image, actor_uuid, %{template_file_id: id})` or `/2` and
+  returns `{:ok, folder_uuid}` or `nil`. Pass the answer to
+  `MediaSelectorHelper.media_selector_url/2` as `scope_folder:`. Don't
+  hand-append the param: core validates and encodes it there. It takes effect
+  only on core 2.23.2 or later and applies to uploads, not picked files. A hook
+  that raises, throws or exits must degrade to `nil`.
 
 ### Landmines
 
@@ -207,6 +216,7 @@ lib/
     google_docs_client.ex                    # Docs + Drive API client over Integrations
     google_docs_client/drive_walker.ex       # paginated + recursive Drive traversal
     media.ex                                 # façade over PhoenixKit.Modules.Storage for image substitution
+    attachments.ex                           # :attachments_parent_folder host hook → picker scope_folder
     errors.ex                                # single translation point for error atoms
     variable.ex                              # {{ variable }} extraction and type guessing
     paths.ex                                 # route path helpers
