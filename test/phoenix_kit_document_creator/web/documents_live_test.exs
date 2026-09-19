@@ -4,6 +4,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLiveTest do
   use PhoenixKitDocumentCreator.LiveCase, async: false
 
   alias PhoenixKitDocumentCreator.Documents
+  alias PhoenixKitDocumentCreator.Errors
   alias PhoenixKitDocumentCreator.Schemas.Template
   alias PhoenixKitDocumentCreator.Taxonomy
   alias PhoenixKitDocumentCreator.Test.Repo
@@ -436,6 +437,60 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLiveTest do
       render_click(view, "export_pdf", %{"id" => "ghost", "name" => "ghost.pdf"})
 
       assert :sys.get_state(view.pid).socket.assigns.error == nil
+    end
+
+    test "export_pdf surfaces the specific Drive failure reason in the flash",
+         %{conn: conn} do
+      file_id = "lv-doc-export-403"
+
+      # A real DB row (not `:sys.replace_state`-injected `documents`/
+      # `known_file_ids`) so `verify_known_file` passes regardless of
+      # whether the connected-mount's own `:sync_from_drive` has run yet —
+      # both `:load_initial` and `:sync_complete` derive `known_file_ids`
+      # from this same DB row, so there's nothing for that background
+      # sync to race with (see the flakiness note on the happy-path tests
+      # above, which comes from injecting ephemeral state instead).
+      {:ok, _doc} =
+        Documents.register_existing_document(%{google_doc_id: file_id, name: "Report"})
+
+      StubIntegrations.stub_request(
+        :get,
+        "/drive/v3/files/#{file_id}/export",
+        {:ok, %{status: 403, body: %{"error" => %{"errors" => [%{"reason" => "forbidden"}]}}}}
+      )
+
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      render_click(view, "export_pdf", %{"id" => file_id, "name" => "Report.pdf"})
+
+      assert :sys.get_state(view.pid).socket.assigns.error == Errors.message(:drive_forbidden)
+    end
+
+    test "export_pdf renders a generic message for an internal failure term",
+         %{conn: conn} do
+      file_id = "lv-doc-export-transport"
+
+      {:ok, _doc} =
+        Documents.register_existing_document(%{google_doc_id: file_id, name: "Report"})
+
+      # Not a Drive status — a transport failure travelling up from
+      # `authenticated_request/4`. `Errors.message/1` would inspect it
+      # straight into the flash; the LV must fall back to its own text.
+      StubIntegrations.stub_request(
+        :get,
+        "/drive/v3/files/#{file_id}/export",
+        {:error, %RuntimeError{message: "econnrefused"}}
+      )
+
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      render_click(view, "export_pdf", %{"id" => file_id, "name" => "Report.pdf"})
+
+      error = :sys.get_state(view.pid).socket.assigns.error
+      assert error == "PDF export failed. Please try again."
+      refute error =~ "econnrefused"
     end
 
     # ── handle_info coverage (PubSub + sync flow) ─────────────────────

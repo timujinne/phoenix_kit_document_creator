@@ -560,7 +560,7 @@ msgstr "Dokumendi loomine ebaõnnestus. Palun proovi uuesti."
 msgid "Action failed. Please try again."
 msgstr "Toiming ebaõnnestus. Palun proovi uuesti."
 
-#: lib/phoenix_kit_document_creator/web/documents_live.ex:688
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:915
 #, elixir-autogen
 msgid "PDF export failed. Please try again."
 msgstr "PDF-i eksport ebaõnnestus. Palun proovi uuesti."
@@ -602,6 +602,31 @@ msgstr "Kustutatud kausta ei leitud"
 #, elixir-autogen
 msgid "Documents folder not found"
 msgstr "Dokumentide kausta ei leitud"
+
+#: lib/phoenix_kit_document_creator/errors.ex:79
+#, elixir-autogen
+msgid "The document is too large for Google Drive to export as PDF"
+msgstr "Dokument on Google Drive'i PDF-ekspordi jaoks liiga suur"
+
+#: lib/phoenix_kit_document_creator/errors.ex:84
+#, elixir-autogen
+msgid "The file is not available in Google Drive — it was deleted, or this Google connection cannot see it"
+msgstr "Faili ei ole Google Drive'is saadaval — see on kustutatud või praegune Google'i ühendus ei näe seda"
+
+#: lib/phoenix_kit_document_creator/errors.ex:90
+#, elixir-autogen
+msgid "Google Drive refused access to the document (the connected Google account cannot read it)"
+msgstr "Google Drive keeldus dokumendile juurdepääsust (ühendatud Google'i konto ei saa seda lugeda)"
+
+#: lib/phoenix_kit_document_creator/errors.ex:94
+#, elixir-autogen
+msgid "Google Drive rate limit reached, try again in a minute"
+msgstr "Google Drive'i piirmäär on täis, proovi minuti pärast uuesti"
+
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:388
+#, elixir-autogen
+msgid "You can permanently delete this record."
+msgstr "Selle kirje saab jäädavalt kustutada."
 
 #: lib/phoenix_kit_document_creator/errors.ex:69
 #, elixir-autogen

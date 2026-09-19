@@ -17,8 +17,12 @@ defmodule PhoenixKitDocumentCreator.ErrorsTest do
       {:create_folder_failed, "Failed to create the Drive folder"},
       {:deleted_folder_not_found, "Deleted folder not found"},
       {:documents_folder_not_found, "Documents folder not found"},
+      {:drive_export_too_large, "The document is too large for Google Drive to export as PDF"},
       {:drive_file_not_found,
-       "File is missing in Google Drive — it cannot be restored. You can permanently delete this record."},
+       "The file is not available in Google Drive — it was deleted, or this Google connection cannot see it"},
+      {:drive_forbidden,
+       "Google Drive refused access to the document (the connected Google account cannot read it)"},
+      {:drive_rate_limited, "Google Drive rate limit reached, try again in a minute"},
       {:file_trashed, "File is in the Drive trash"},
       {:folder_not_found, "Folder not found"},
       {:folder_search_failed, "Failed to search Drive for the folder"},
@@ -86,6 +90,26 @@ defmodule PhoenixKitDocumentCreator.ErrorsTest do
     test "unknown term gets inspected" do
       assert Errors.message({:weird, :tuple}) == "{:weird, :tuple}"
       assert Errors.message(:totally_made_up_atom) == ":totally_made_up_atom"
+    end
+  end
+
+  describe "message/2 fallback" do
+    test "a mapped atom still renders its own message" do
+      assert Errors.message(:drive_forbidden, "generic") == Errors.message(:drive_forbidden)
+
+      assert Errors.message({:error, :drive_rate_limited}, "generic") ==
+               Errors.message(:drive_rate_limited)
+    end
+
+    test "an unmapped term renders the caller's fallback, never inspect/1" do
+      assert Errors.message(:totally_made_up_atom, "generic") == "generic"
+      assert Errors.message({:error, :token_refresh_failed}, "generic") == "generic"
+      assert Errors.message(%RuntimeError{message: "boom"}, "generic") == "generic"
+      assert Errors.message({:weird, :tuple}, "generic") == "generic"
+    end
+
+    test "a free-text upstream string still wins over the fallback" do
+      assert Errors.message("Upstream said no", "generic") == "Upstream said no"
     end
   end
 

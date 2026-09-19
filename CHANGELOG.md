@@ -1,3 +1,39 @@
+## 0.9.5 - 2026-09-17
+
+### Added
+
+- `GoogleDocsClient.export_pdf/1` names why Drive refused an export instead
+  of collapsing everything into `:pdf_export_failed`. A 404 is
+  `:drive_file_not_found`; a 403 is classified by its
+  `error.errors[].reason` (or `error.reason`) into `:drive_forbidden` for a
+  permission failure, `:drive_rate_limited` for a rate or quota limit, and
+  `:drive_export_too_large` for a Doc past Drive's export size cap.
+  Anything unrecognised still reports the caller's own generic reason. The
+  admin UI renders the specific message, so "the file is gone", "this
+  connection can't read it", "you are being rate limited" and "this document
+  is too big to export" are finally distinguishable.
+- `Errors.message/2` — like `message/1`, but returns a caller-supplied
+  fallback for a term the module has no message for, instead of the
+  `inspect/1` catch-all. Use it wherever a reason can also be an internal
+  term (a `Req` transport error, `:not_configured`, `:token_refresh_failed`)
+  that must not reach a user-facing flash as a raw Elixir term.
+
+### Changed
+
+- `Errors.message(:drive_file_not_found)` no longer claims the file was
+  deleted. Drive answers 404 — not 403 — for a live file the current
+  connection is not allowed to see, after an unshare or a re-pointed Google
+  connection, so the message now names both possibilities. `export_pdf/1`'s
+  `@doc` carries the same caveat.
+- `Errors.message(:drive_forbidden)` says "the connected Google account"
+  rather than "the service account". This module authenticates with an OAuth
+  connection from `PhoenixKit.Integrations`; it has no service account.
+- Upgraded locked dependencies: `phoenix_kit` 2.23.2 → 2.28.2,
+  `phoenix_live_view` 1.2.11 → 1.2.12, `etcher` 0.13.2 → 0.14.0, `fresco`
+  0.11.0 → 0.12.0, `tessera` 0.3.5 → 0.3.7, `swoosh` 1.28.0 → 1.28.1,
+  `phoenix_kit_templates` 0.1.1 → 0.1.2, `ex_aws_sqs` 5.0.1 → 5.0.2. The
+  `:phoenix_kit` requirement is unchanged (`~> 2.21 and >= 2.21.3`).
+
 ## 0.9.4 - 2026-09-15
 
 ### Added

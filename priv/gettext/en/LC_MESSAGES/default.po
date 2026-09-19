@@ -560,7 +560,7 @@ msgstr "Failed to create document. Please try again."
 msgid "Action failed. Please try again."
 msgstr "Action failed. Please try again."
 
-#: lib/phoenix_kit_document_creator/web/documents_live.ex:688
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:915
 #, elixir-autogen
 msgid "PDF export failed. Please try again."
 msgstr "PDF export failed. Please try again."
@@ -602,6 +602,31 @@ msgstr "Deleted folder not found"
 #, elixir-autogen
 msgid "Documents folder not found"
 msgstr "Documents folder not found"
+
+#: lib/phoenix_kit_document_creator/errors.ex:79
+#, elixir-autogen
+msgid "The document is too large for Google Drive to export as PDF"
+msgstr "The document is too large for Google Drive to export as PDF"
+
+#: lib/phoenix_kit_document_creator/errors.ex:84
+#, elixir-autogen
+msgid "The file is not available in Google Drive — it was deleted, or this Google connection cannot see it"
+msgstr "The file is not available in Google Drive — it was deleted, or this Google connection cannot see it"
+
+#: lib/phoenix_kit_document_creator/errors.ex:90
+#, elixir-autogen
+msgid "Google Drive refused access to the document (the connected Google account cannot read it)"
+msgstr "Google Drive refused access to the document (the connected Google account cannot read it)"
+
+#: lib/phoenix_kit_document_creator/errors.ex:94
+#, elixir-autogen
+msgid "Google Drive rate limit reached, try again in a minute"
+msgstr "Google Drive rate limit reached, try again in a minute"
+
+#: lib/phoenix_kit_document_creator/web/documents_live.ex:388
+#, elixir-autogen
+msgid "You can permanently delete this record."
+msgstr "You can permanently delete this record."
 
 #: lib/phoenix_kit_document_creator/errors.ex:69
 #, elixir-autogen

@@ -1481,9 +1481,36 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
     end
   end
 
-  @doc "Export a Google Doc as PDF. Returns `{:ok, pdf_binary}`."
+  @doc """
+  Export a Google Doc as PDF. Returns `{:ok, pdf_binary}`.
+
+  On failure the reason names why Drive refused the export instead of
+  collapsing every case into `:pdf_export_failed`:
+
+    * `:drive_file_not_found` — Drive returned 404. Usually the file was
+      deleted, but Drive also answers 404 for a live file the current
+      connection is not allowed to see (an unshare, or a re-pointed
+      Google connection), so callers must not treat it as proof the file
+      is gone.
+    * `:drive_forbidden` — Drive returned 403 because the connected
+      Google account lacks permission to read the file
+    * `:drive_rate_limited` — Drive returned 403 because of a rate/quota
+      limit (retrying later can succeed)
+    * `:drive_export_too_large` — Drive returned 403 because the Doc is
+      past its export size cap
+    * `:pdf_export_failed` — any other non-200 response, including a 403
+      with an unrecognized reason
+  """
   @spec export_pdf(String.t()) ::
-          {:ok, binary()} | {:error, :invalid_file_id | :pdf_export_failed | term()}
+          {:ok, binary()}
+          | {:error,
+             :invalid_file_id
+             | :drive_export_too_large
+             | :drive_file_not_found
+             | :drive_forbidden
+             | :drive_rate_limited
+             | :pdf_export_failed
+             | term()}
   def export_pdf(doc_id) do
     with {:ok, fid} <- validate_file_id(doc_id) do
       case authenticated_request(:get, "#{@drive_base}/files/#{fid}/export",
@@ -1491,6 +1518,14 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
            ) do
         {:ok, %{status: 200, body: body}} when is_binary(body) ->
           {:ok, body}
+
+        {:ok, %{status: 404, body: body}} ->
+          log_drive_error("PDF export failed", body)
+          {:error, :drive_file_not_found}
+
+        {:ok, %{status: 403, body: body}} ->
+          log_drive_error("PDF export failed", body)
+          {:error, classify_403(body, :pdf_export_failed)}
 
         {:ok, %{body: body}} ->
           log_drive_error("PDF export failed", body)
@@ -3270,6 +3305,45 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
       "[DocumentCreator] #{label} | body=#{truncate_inspect(body, @drive_log_body_limit)}"
     )
   end
+
+  @drive_permission_403_reasons ~w(
+    forbidden
+    insufficientFilePermissions
+    insufficientPermissions
+    appNotAuthorizedToFile
+    domainPolicy
+    teamDriveMembershipRequired
+  )
+
+  @drive_rate_limit_403_reasons ~w(
+    userRateLimitExceeded
+    rateLimitExceeded
+    dailyLimitExceeded
+    quotaExceeded
+    sharingRateLimitExceeded
+  )
+
+  # Classifies a Drive API 403 response body by its `error.errors[].reason`
+  # (falling back to `error.reason` for the single-error shape some Drive
+  # endpoints use) into a permission failure vs. a rate/quota limit vs.
+  # the caller's own generic reason. Shared by any caller that needs to
+  # tell "the connected account can't read this file" apart from "try
+  # again later" — hence `fallback`: an unrecognized 403 reports the
+  # operation that actually failed instead of borrowing another
+  # endpoint's message.
+  defp classify_403(body, fallback) do
+    case drive_403_reason(body) do
+      reason when reason in @drive_permission_403_reasons -> :drive_forbidden
+      reason when reason in @drive_rate_limit_403_reasons -> :drive_rate_limited
+      # Export-only, but harmless elsewhere: no other endpoint emits it.
+      "exportSizeLimitExceeded" -> :drive_export_too_large
+      _other -> fallback
+    end
+  end
+
+  defp drive_403_reason(%{"error" => %{"errors" => [%{"reason" => reason} | _]}}), do: reason
+  defp drive_403_reason(%{"error" => %{"reason" => reason}}), do: reason
+  defp drive_403_reason(_body), do: nil
 
   defp truncate_inspect(value, limit) do
     inspected = inspect(value, limit: :infinity, printable_limit: limit)

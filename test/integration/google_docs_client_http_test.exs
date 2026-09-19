@@ -910,6 +910,98 @@ defmodule PhoenixKitDocumentCreator.Integration.GoogleDocsClientHttpTest do
 
       assert {:error, :pdf_export_failed} = GoogleDocsClient.export_pdf("doc-1")
     end
+
+    test "returns {:error, :drive_file_not_found} on 404 (Drive file deleted)" do
+      StubIntegrations.stub_request(
+        :get,
+        "/drive/v3/files/doc-1/export",
+        {:ok, %{status: 404, body: %{"error" => %{"errors" => [%{"reason" => "notFound"}]}}}}
+      )
+
+      assert {:error, :drive_file_not_found} = GoogleDocsClient.export_pdf("doc-1")
+    end
+
+    test "returns {:error, :drive_forbidden} on 403 (service account can't read file)" do
+      StubIntegrations.stub_request(
+        :get,
+        "/drive/v3/files/doc-1/export",
+        {:ok, %{status: 403, body: %{"error" => %{"errors" => [%{"reason" => "forbidden"}]}}}}
+      )
+
+      assert {:error, :drive_forbidden} = GoogleDocsClient.export_pdf("doc-1")
+    end
+
+    test "returns {:error, :drive_rate_limited} on 403 with a rate/quota limit reason" do
+      StubIntegrations.stub_request(
+        :get,
+        "/drive/v3/files/doc-1/export",
+        {:ok,
+         %{
+           status: 403,
+           body: %{"error" => %{"errors" => [%{"reason" => "userRateLimitExceeded"}]}}
+         }}
+      )
+
+      assert {:error, :drive_rate_limited} = GoogleDocsClient.export_pdf("doc-1")
+    end
+
+    test "returns {:error, :pdf_export_failed} on 403 with an unrecognized reason" do
+      StubIntegrations.stub_request(
+        :get,
+        "/drive/v3/files/doc-1/export",
+        {:ok, %{status: 403, body: %{"error" => %{"errors" => [%{"reason" => "somethingElse"}]}}}}
+      )
+
+      assert {:error, :pdf_export_failed} = GoogleDocsClient.export_pdf("doc-1")
+    end
+
+    test "returns {:error, :pdf_export_failed} on 403 with a body that has no errors list" do
+      StubIntegrations.stub_request(
+        :get,
+        "/drive/v3/files/doc-1/export",
+        {:ok, %{status: 403, body: %{"error" => "boom"}}}
+      )
+
+      assert {:error, :pdf_export_failed} = GoogleDocsClient.export_pdf("doc-1")
+    end
+
+    test "returns {:error, :drive_forbidden} on 403 teamDriveMembershipRequired" do
+      StubIntegrations.stub_request(
+        :get,
+        "/drive/v3/files/doc-1/export",
+        {:ok,
+         %{
+           status: 403,
+           body: %{"error" => %{"errors" => [%{"reason" => "teamDriveMembershipRequired"}]}}
+         }}
+      )
+
+      assert {:error, :drive_forbidden} = GoogleDocsClient.export_pdf("doc-1")
+    end
+
+    test "returns {:error, :drive_export_too_large} on 403 exportSizeLimitExceeded" do
+      StubIntegrations.stub_request(
+        :get,
+        "/drive/v3/files/doc-1/export",
+        {:ok,
+         %{
+           status: 403,
+           body: %{"error" => %{"errors" => [%{"reason" => "exportSizeLimitExceeded"}]}}
+         }}
+      )
+
+      assert {:error, :drive_export_too_large} = GoogleDocsClient.export_pdf("doc-1")
+    end
+
+    test "classifies the single-error `error.reason` shape too" do
+      StubIntegrations.stub_request(
+        :get,
+        "/drive/v3/files/doc-1/export",
+        {:ok, %{status: 403, body: %{"error" => %{"reason" => "rateLimitExceeded"}}}}
+      )
+
+      assert {:error, :drive_rate_limited} = GoogleDocsClient.export_pdf("doc-1")
+    end
   end
 
   describe "move_file/2 (HTTP)" do

@@ -17,7 +17,10 @@ defmodule PhoenixKitDocumentCreator.Errors do
   `gettext/1` at the call site.
 
   Unknown atoms fall through to `inspect/1` so the catch-all returns
-  a useful-if-ugly string rather than crashing.
+  a useful-if-ugly string rather than crashing. Call sites that surface
+  a reason straight into the UI should use `message/2` instead, so an
+  internal term (a transport error, `:not_configured`) renders as their
+  own generic message rather than as a raw Elixir term.
   """
 
   use Gettext, backend: PhoenixKitDocumentCreator.Gettext
@@ -28,7 +31,10 @@ defmodule PhoenixKitDocumentCreator.Errors do
           | :create_folder_failed
           | :deleted_folder_not_found
           | :documents_folder_not_found
+          | :drive_export_too_large
           | :drive_file_not_found
+          | :drive_forbidden
+          | :drive_rate_limited
           | :file_trashed
           | :folder_not_found
           | :folder_search_failed
@@ -69,11 +75,23 @@ defmodule PhoenixKitDocumentCreator.Errors do
   def message(:deleted_folder_not_found), do: gettext("Deleted folder not found")
   def message(:documents_folder_not_found), do: gettext("Documents folder not found")
 
+  def message(:drive_export_too_large),
+    do: gettext("The document is too large for Google Drive to export as PDF")
+
   def message(:drive_file_not_found),
     do:
       gettext(
-        "File is missing in Google Drive — it cannot be restored. You can permanently delete this record."
+        "The file is not available in Google Drive — it was deleted, or this Google connection cannot see it"
       )
+
+  def message(:drive_forbidden),
+    do:
+      gettext(
+        "Google Drive refused access to the document (the connected Google account cannot read it)"
+      )
+
+  def message(:drive_rate_limited),
+    do: gettext("Google Drive rate limit reached, try again in a minute")
 
   def message(:file_trashed), do: gettext("File is in the Drive trash")
   def message(:folder_not_found), do: gettext("Folder not found")
@@ -123,4 +141,25 @@ defmodule PhoenixKitDocumentCreator.Errors do
 
   def message(reason) when is_binary(reason), do: reason
   def message(reason), do: inspect(reason)
+
+  @doc """
+  Like `message/1`, but returns `fallback` for any term this module has
+  no message for, instead of the `inspect/1` catch-all.
+
+  Use it wherever the reason travels up from a call that can also fail
+  with an internal term — a `Req` transport error, `:not_configured`,
+  `:token_refresh_failed` — which must not reach a user-facing flash as
+  a raw Elixir term.
+  """
+  @spec message(term(), String.t()) :: String.t()
+  def message({:error, reason}, fallback), do: message(reason, fallback)
+
+  def message(reason, fallback) when is_binary(fallback) do
+    # A term this module maps never renders as its own `inspect/1` form,
+    # so comparing `message/1`'s answer against the catch-all's output
+    # tells "mapped" from "fell through" without a second list of atoms
+    # to keep in sync with the clauses above.
+    mapped = message(reason)
+    if mapped == inspect(reason), do: fallback, else: mapped
+  end
 end

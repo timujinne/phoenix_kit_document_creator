@@ -382,7 +382,12 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
 
           {:error, :drive_file_not_found} when action == :restore ->
             Logger.warning("#{action} failed for #{file_id}: drive file not found (404)")
-            assign(socket, warning: Errors.message(:drive_file_not_found))
+
+            warning =
+              Errors.message(:drive_file_not_found) <>
+                " " <> gettext("You can permanently delete this record.")
+
+            assign(socket, warning: warning)
 
           {:error, reason} ->
             Logger.error("#{action} failed for #{file_id}: #{inspect(reason)}")
@@ -901,7 +906,14 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
 
           {:error, reason} ->
             Logger.error("PDF export failed: #{inspect(reason)}")
-            {:noreply, assign(socket, error: gettext("PDF export failed. Please try again."))}
+
+            # `message/2`, not `message/1`: the reason can also be an
+            # internal term (a Req transport error, `:not_configured`)
+            # that must not reach the flash as a raw inspect/1 string.
+            {:noreply,
+             assign(socket,
+               error: Errors.message(reason, gettext("PDF export failed. Please try again."))
+             )}
         end
 
       _ ->
