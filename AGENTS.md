@@ -497,6 +497,10 @@ publish has succeeded.
   streams the bytes with the right `Content-Type` / `Content-Disposition`; the
   LiveView then becomes `sign_pdf_download/2` plus a `push_event("open-url", …)`.
   Trigger: admins needing exports above the cap.
+  Since 0.9.7 `export_pdf/1` fetches PDFs past Drive's ~10 MB `files.export`
+  cap through the file's `exportLinks`, so the admin page downloads them only
+  to discard them at the 5 MB push cap; the endpoint would make those
+  deliverable.
 - **`reconcile_status/3` is N+1 against Drive when many files are untracked.**
   Every record whose `google_doc_id` is in the DB but absent from the latest
   walk falls through `classify_by_api/5` to a per-file

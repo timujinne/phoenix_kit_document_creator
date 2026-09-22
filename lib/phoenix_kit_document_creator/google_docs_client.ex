@@ -59,6 +59,14 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   @drive_base "https://www.googleapis.com/drive/v3"
   @drive_upload_base "https://www.googleapis.com/upload/drive/v3"
 
+  # Long-side cap requested from lh3 for embedded images — see
+  # `upload_image_for_embedding/3`.
+  @embed_image_max_side 4096
+
+  # Receive timeout for the over-the-cap PDF download — see
+  # `export_pdf_via_export_link/1`.
+  @export_link_receive_timeout 120_000
+
   # All access to `PhoenixKit.Integrations` flows through this resolver so
   # tests can route the three call sites (get_credentials/1,
   # get_integration/1, authenticated_request/4) through a stub module
@@ -1296,8 +1304,17 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   Used when inserting an image into a Google Doc via `insertInlineImage`,
   which requires a fetchable URL (not raw bytes). Uploads the binary to
   Drive, grants anyone-with-link read access, and returns an
-  `lh3.googleusercontent.com/d/<id>` URL that Google's image fetcher can
-  read without following a redirect.
+  `lh3.googleusercontent.com/d/<id>=s4096` URL that Google's image fetcher
+  can read without following a redirect.
+
+  The `=s4096` suffix matters: a bare `lh3…/d/<id>` serves a copy scaled
+  down to 1600px on the long side, so every larger image lost detail in the
+  document and its PDF (a 4000×2884 upload reached the PDF as 1600×1154).
+  `=sN` returns the original bytes when the long side is at most N and never
+  enlarges; 4096 rather than `=s0` because `insertInlineImage` rejects
+  images over 25 megapixels, and a 4096px long side stays under that for
+  any aspect ratio. Google's own PDF export stores images at up to 2500px on
+  the long side, so 4096 loses nothing there.
 
     - `data` — raw image bytes
     - `mime_type` — MIME type string, e.g. `"image/jpeg"`
@@ -1341,8 +1358,8 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
             # lh3.googleusercontent.com/d/<file_id> serves the raw image binary
             # (HTTP 200, no redirect). drive.google.com/uc?export=view returns a
             # 303 the Docs insertInlineImage fetcher does not follow → 400
-            # INVALID_ARGUMENT.
-            {:ok, "https://lh3.googleusercontent.com/d/#{file_id}"}
+            # INVALID_ARGUMENT. The size suffix is explained in the @doc.
+            {:ok, "https://lh3.googleusercontent.com/d/#{file_id}=s#{@embed_image_max_side}"}
 
           {:error, _} = err ->
             err
@@ -1496,10 +1513,15 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
       Google account lacks permission to read the file
     * `:drive_rate_limited` — Drive returned 403 because of a rate/quota
       limit (retrying later can succeed)
-    * `:drive_export_too_large` — Drive returned 403 because the Doc is
-      past its export size cap
+    * `:drive_export_too_large` — the Doc is past the export endpoint's
+      size cap (about 10 MB of PDF) AND the fallback below failed too
     * `:pdf_export_failed` — any other non-200 response, including a 403
       with an unrecognized reason
+
+  Past that cap `files.export` answers 403 `exportSizeLimitExceeded`; the
+  same PDF is then downloaded from the file's `exportLinks` (a
+  `docs.google.com` URL that has no such cap) with the same credentials.
+  The token is only ever sent to an `https://docs.google.com` link.
   """
   @spec export_pdf(String.t()) ::
           {:ok, binary()}
@@ -1524,8 +1546,7 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
           {:error, :drive_file_not_found}
 
         {:ok, %{status: 403, body: body}} ->
-          log_drive_error("PDF export failed", body)
-          {:error, classify_403(body, :pdf_export_failed)}
+          export_pdf_forbidden(fid, body)
 
         {:ok, %{body: body}} ->
           log_drive_error("PDF export failed", body)
@@ -1534,6 +1555,43 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
         {:error, _} = err ->
           err
       end
+    end
+  end
+
+  defp export_pdf_forbidden(fid, body) do
+    case classify_403(body, :pdf_export_failed) do
+      :drive_export_too_large ->
+        export_pdf_via_export_link(fid)
+
+      reason ->
+        log_drive_error("PDF export failed", body)
+        {:error, reason}
+    end
+  end
+
+  # `files.export` refuses documents whose PDF is past ~10 MB — a few
+  # full-resolution photos are enough. The file's `exportLinks` PDF URL
+  # serves the same export without that cap.
+  #
+  # The body must start with the `%PDF-` magic: docs.google.com answers
+  # some auth and interstitial failures with a 200 HTML page, which would
+  # otherwise be handed to the caller as a PDF. The longer receive timeout
+  # is because every document reaching this path renders to over 10 MB,
+  # which can outlast Req's 15s default.
+  defp export_pdf_via_export_link(fid) do
+    with {:ok, %{status: 200, body: %{"exportLinks" => %{"application/pdf" => link}}}}
+         when is_binary(link) <-
+           authenticated_request(:get, "#{@drive_base}/files/#{fid}",
+             params: [fields: "exportLinks"]
+           ),
+         %URI{scheme: "https", host: "docs.google.com"} <- URI.parse(link),
+         {:ok, %{status: 200, body: "%PDF-" <> _ = pdf}} <-
+           authenticated_request(:get, link, receive_timeout: @export_link_receive_timeout) do
+      {:ok, pdf}
+    else
+      other ->
+        log_drive_error("PDF export past the size cap, export link fallback failed", other)
+        {:error, :drive_export_too_large}
     end
   end
 

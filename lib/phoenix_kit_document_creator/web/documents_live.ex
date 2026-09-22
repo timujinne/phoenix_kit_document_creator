@@ -22,6 +22,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
   alias PhoenixKitDocumentCreator.Errors
   alias PhoenixKitDocumentCreator.GoogleDocsClient
   alias PhoenixKitDocumentCreator.Taxonomy
+  alias PhoenixKitDocumentCreator.Thumbnail
   alias PhoenixKitDocumentCreator.Web.Helpers
   alias PhoenixKitWeb.Helpers.MediaSelectorHelper
 
@@ -2453,11 +2454,17 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
 
   attr(:thumbnail, :any, default: nil, doc: "Thumbnail URL, or nil while loading.")
 
+  # A fixed portrait frame (every card in the grid stays the same height)
+  # showing the top of a portrait page. Drive's thumbnail comes in the
+  # page's own orientation, so a landscape document
+  # (`documentStyle.flipPageOrientation`) would be cropped to its middle
+  # strip by `object-fit: cover`; `Thumbnail.img_style/1` reads the image
+  # header and fits a wider-than-tall one whole instead.
   defp render_thumbnail(assigns) do
     ~H"""
     <div style="width:100%;max-width:183px;aspect-ratio:183/258;overflow:hidden;border-radius:4px;background:#fff;border:1px solid oklch(var(--color-base-content) / 0.2);box-shadow:0 2px 8px rgba(0,0,0,0.08);">
       <%= if @thumbnail do %>
-        <img src={@thumbnail} style="width:100%;height:100%;object-fit:cover;object-position:top;" />
+        <img src={@thumbnail} style={Thumbnail.img_style(@thumbnail)} />
       <% else %>
         <div style="width:100%;height:100%;background:#fff;display:flex;align-items:center;justify-content:center;">
           <span class="loading loading-spinner loading-md text-base-300" />

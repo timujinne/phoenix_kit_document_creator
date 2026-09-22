@@ -230,4 +230,34 @@ defmodule PhoenixKitDocumentCreator.Web.Components.CreateDocumentModalTest do
       assert html =~ "selected"
     end
   end
+
+  describe "template tiles" do
+    alias PhoenixKitDocumentCreator.Test.ImageFixtures
+
+    defp tile(thumbnail) do
+      html =
+        render_component(&CreateDocumentModal.modal/1,
+          open: true,
+          templates: [%{"id" => "tpl-1", "name" => "Tile"}],
+          thumbnails: %{"tpl-1" => thumbnail},
+          step: "choose"
+        )
+
+      [tile] = Regex.run(~r/<div style="width:100px;height:141px;[^"]*">\s*<img[^>]*>/, html)
+      tile
+    end
+
+    test "a portrait template keeps the top-anchored cover crop in its fixed tile" do
+      thumb = ImageFixtures.png_uri(1200, 1600)
+      tile = tile(thumb)
+      assert tile =~ ~s(src="#{thumb}")
+      assert tile =~ "object-fit:cover;object-position:top"
+      refute tile =~ "onload"
+    end
+
+    test "a landscape template is fitted whole in the same fixed tile" do
+      tile = tile(ImageFixtures.png_uri(1600, 1200))
+      assert tile =~ "object-fit:contain;object-position:center"
+    end
+  end
 end

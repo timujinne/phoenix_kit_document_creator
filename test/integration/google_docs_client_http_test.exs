@@ -979,15 +979,87 @@ defmodule PhoenixKitDocumentCreator.Integration.GoogleDocsClientHttpTest do
       assert {:error, :drive_forbidden} = GoogleDocsClient.export_pdf("doc-1")
     end
 
-    test "returns {:error, :drive_export_too_large} on 403 exportSizeLimitExceeded" do
+    test "returns {:error, :drive_export_too_large} on 403 exportSizeLimitExceeded when the export link can't be read either" do
+      stub_export_too_large("doc-1")
+
       StubIntegrations.stub_request(
         :get,
-        "/drive/v3/files/doc-1/export",
-        {:ok,
-         %{
-           status: 403,
-           body: %{"error" => %{"errors" => [%{"reason" => "exportSizeLimitExceeded"}]}}
-         }}
+        ~r{/drive/v3/files/doc-1$},
+        {:ok, %{status: 500, body: %{"error" => "boom"}}}
+      )
+
+      assert {:error, :drive_export_too_large} = GoogleDocsClient.export_pdf("doc-1")
+    end
+
+    test "past the export size cap, downloads the PDF from the file's exportLinks" do
+      pdf_body = "%PDF-1.4\n" <> String.duplicate("PDF", 50)
+
+      link =
+        "https://docs.google.com/feeds/download/documents/export/Export?id=doc-1&exportFormat=pdf"
+
+      stub_export_too_large("doc-1")
+      stub_export_links("doc-1", link)
+
+      StubIntegrations.stub_request(
+        :get,
+        "docs.google.com/feeds/download",
+        {:ok, %{status: 200, body: pdf_body, headers: %{}}}
+      )
+
+      assert {:ok, ^pdf_body} = GoogleDocsClient.export_pdf("doc-1")
+
+      assert Enum.any?(StubIntegrations.recorded_requests(), fn {method, url, opts} ->
+               method == :get and url == link and opts[:receive_timeout] > 15_000
+             end)
+    end
+
+    test "past the export size cap, rejects a 200 export link answer that is not a PDF" do
+      stub_export_too_large("doc-1")
+
+      stub_export_links(
+        "doc-1",
+        "https://docs.google.com/feeds/download/documents/export/Export?id=doc-1&exportFormat=pdf"
+      )
+
+      StubIntegrations.stub_request(
+        :get,
+        "docs.google.com/feeds/download",
+        {:ok, %{status: 200, body: "<!DOCTYPE html><html>Sign in</html>", headers: %{}}}
+      )
+
+      assert {:error, :drive_export_too_large} = GoogleDocsClient.export_pdf("doc-1")
+    end
+
+    test "past the export size cap, reports :drive_export_too_large when exportLinks has no usable PDF link" do
+      stub_export_too_large("doc-1")
+      stub_export_links("doc-1", nil)
+
+      assert {:error, :drive_export_too_large} = GoogleDocsClient.export_pdf("doc-1")
+    end
+
+    test "past the export size cap, never sends the token to an export link off docs.google.com" do
+      stub_export_too_large("doc-1")
+      stub_export_links("doc-1", "https://evil.example/Export?id=doc-1")
+
+      assert {:error, :drive_export_too_large} = GoogleDocsClient.export_pdf("doc-1")
+
+      refute Enum.any?(StubIntegrations.recorded_requests(), fn {_, url, _} ->
+               String.contains?(url, "evil.example")
+             end)
+    end
+
+    test "past the export size cap, reports :drive_export_too_large when the export link fails" do
+      stub_export_too_large("doc-1")
+
+      stub_export_links(
+        "doc-1",
+        "https://docs.google.com/feeds/download/documents/export/Export?id=doc-1&exportFormat=pdf"
+      )
+
+      StubIntegrations.stub_request(
+        :get,
+        "docs.google.com/feeds/download",
+        {:ok, %{status: 500, body: "boom"}}
       )
 
       assert {:error, :drive_export_too_large} = GoogleDocsClient.export_pdf("doc-1")
@@ -1001,6 +1073,45 @@ defmodule PhoenixKitDocumentCreator.Integration.GoogleDocsClientHttpTest do
       )
 
       assert {:error, :drive_rate_limited} = GoogleDocsClient.export_pdf("doc-1")
+    end
+  end
+
+  defp stub_export_too_large(file_id) do
+    StubIntegrations.stub_request(
+      :get,
+      "/drive/v3/files/#{file_id}/export",
+      {:ok,
+       %{
+         status: 403,
+         body: %{"error" => %{"errors" => [%{"reason" => "exportSizeLimitExceeded"}]}}
+       }}
+    )
+  end
+
+  defp stub_export_links(file_id, pdf_link) do
+    StubIntegrations.stub_request(
+      :get,
+      ~r{/drive/v3/files/#{Regex.escape(file_id)}$},
+      {:ok, %{status: 200, body: %{"exportLinks" => %{"application/pdf" => pdf_link}}}}
+    )
+  end
+
+  describe "upload_image_for_embedding/3" do
+    test "returns an lh3 URL that asks for the image at up to 4096px, not the 1600px default" do
+      StubIntegrations.stub_request(
+        :post,
+        "/upload/drive/v3/files",
+        {:ok, %{status: 200, body: %{"id" => "img-1"}}}
+      )
+
+      StubIntegrations.stub_request(
+        :post,
+        "/drive/v3/files/img-1/permissions",
+        {:ok, %{status: 200, body: %{}}}
+      )
+
+      assert {:ok, "https://lh3.googleusercontent.com/d/img-1=s4096"} =
+               GoogleDocsClient.upload_image_for_embedding("PNGDATA", "image/png")
     end
   end
 

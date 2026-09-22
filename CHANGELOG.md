@@ -1,3 +1,44 @@
+## 0.9.8 - 2026-09-22
+
+### Fixed
+
+- Landscape documents and templates (`documentStyle.flipPageOrientation`) are
+  no longer cropped to their middle strip in the fixed portrait thumbnail
+  frames of the documents / templates grid and the create-document modal.
+  They are fitted whole and centred. The orientation is read server-side from
+  the cached thumbnail's image header (PNG, GIF, WebP, JPEG) by the new
+  `PhoenixKitDocumentCreator.Thumbnail`, so it survives LiveView re-renders
+  and needs no inline script.
+
+### Changed
+
+- Upgraded locked `phoenix_kit` 2.37.0 → 2.37.3. The `:phoenix_kit`
+  requirement is unchanged (`~> 2.21 and >= 2.21.3`).
+
+## 0.9.7 - 2026-09-22
+
+### Fixed
+
+- Images inserted into templates and documents keep their resolution. The
+  embed URL now asks Google for up to 4096px on the long side instead of the
+  1600px copy a bare `lh3.googleusercontent.com/d/<id>` URL serves; 4096px
+  keeps every aspect ratio under `insertInlineImage`'s 25-megapixel limit.
+- `GoogleDocsClient.export_pdf/1` no longer fails on documents whose PDF is
+  past the ~10 MB cap of Drive's `files.export` (403
+  `exportSizeLimitExceeded`). It downloads the same PDF from the file's
+  `exportLinks`, sending the token only to an `https://docs.google.com`
+  link, with a 120s receive timeout, and accepting only a body that starts
+  with `%PDF-`. `:drive_export_too_large` now means the fallback failed too.
+  The admin page still refuses to push PDFs over 5 MB, so these exports
+  reach API callers of `Documents.export_pdf/2` but not the download button.
+
+### Changed
+
+- Upgraded locked dependencies: `phoenix_kit` 2.35.0 → 2.37.0, `etcher`
+  0.16.0 → 0.17.0, `phoenix_template` 1.0.4 → 1.1.0, `quic` 1.8.2 → 1.10.0,
+  `webtransport` 0.4.5 → 0.4.6, `h2` 0.12.0 → 0.12.1. The `:phoenix_kit`
+  requirement is unchanged (`~> 2.21 and >= 2.21.3`).
+
 ## 0.9.6 - 2026-09-21
 
 ### Added
