@@ -1954,6 +1954,10 @@ defmodule PhoenixKitDocumentCreator.Documents do
 
   Required opts: `:created_by_uuid`, `:name`. Optional: `:separator` (default `:page_break`).
 
+  The first template is copied as the document; every later one starts on a
+  new page as its own Google Docs section, carrying that template's own page
+  margins (headers and footers still come from the first template).
+
   Variable substitution is range-scoped per section: each section's `variable_values`
   are applied only within the character range that section occupies in the composed doc.
   Identical placeholder keys in different sections (e.g. `{{name}}` in section 0 and
@@ -2207,6 +2211,100 @@ defmodule PhoenixKitDocumentCreator.Documents do
       _ ->
         :ok
     end
+  end
+
+  @doc """
+  Force a fresh thumbnail fetch for a Drive file, bypassing the cache.
+
+  `GoogleDocsClient.fetch_thumbnail/1` always requests a current
+  `thumbnailLink` from Drive rather than reusing a stale one, so calling
+  this once Google's thumbnail rendering has caught up with the file's
+  real content gets the up-to-date image. On success the persisted
+  thumbnail is overwritten; on failure the existing cached thumbnail is
+  left untouched.
+
+  ## Options
+
+  - `:actor_uuid` — UUID of the user performing the action (for activity logging)
+  """
+  @spec refresh_thumbnail(String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  def refresh_thumbnail(google_doc_id, opts \\ []) when is_binary(google_doc_id) do
+    case GoogleDocsClient.fetch_thumbnail(google_doc_id) do
+      {:ok, data_uri} = ok ->
+        persist_thumbnail(google_doc_id, data_uri)
+
+        log_activity(%{
+          action: "file.thumbnail_refreshed",
+          mode: "manual",
+          actor_uuid: opts[:actor_uuid],
+          resource_type: "file",
+          metadata: %{"google_doc_id" => google_doc_id}
+        })
+
+        ok
+
+      {:error, _reason} = error ->
+        log_failed_mutation("file.thumbnail_refreshed", "file", opts, %{
+          "google_doc_id" => google_doc_id
+        })
+
+        error
+    end
+  end
+
+  @doc """
+  Asynchronous variant of `refresh_thumbnail/2` for LiveView callers.
+
+  Spawns a supervised task under `PhoenixKit.TaskSupervisor` that sends
+  `{:thumbnail_refreshed, google_doc_id, data_uri}` to `caller_pid` on
+  success or `{:thumbnail_refresh_failed, google_doc_id, reason}` on
+  failure — including when `refresh_thumbnail/2` raises, throws or exits
+  (e.g. a transient DB error), so the caller is always notified and never
+  left waiting.
+
+  The success message is deliberately not `fetch_thumbnails_async/2`'s
+  `{:thumbnail_result, …}`: a caller that tracks this refresh as pending
+  must be able to tell its completion apart from a background thumbnail
+  that happens to arrive for the same file.
+  """
+  @spec refresh_thumbnail_async(String.t(), pid(), keyword()) :: :ok
+  def refresh_thumbnail_async(google_doc_id, caller_pid, opts \\ [])
+      when is_binary(google_doc_id) do
+    Task.Supervisor.start_child(
+      PhoenixKit.TaskSupervisor,
+      fn ->
+        try do
+          case refresh_thumbnail(google_doc_id, opts) do
+            {:ok, data_uri} ->
+              send(caller_pid, {:thumbnail_refreshed, google_doc_id, data_uri})
+
+            {:error, reason} ->
+              send(caller_pid, {:thumbnail_refresh_failed, google_doc_id, reason})
+          end
+        rescue
+          # Keeps a crash (e.g. a transient DB error from persist_thumbnail/2)
+          # from leaving the caller waiting forever with no message —
+          # mirrors the rescue in DocumentsLive's :perform_file_action handler.
+          e ->
+            Logger.error(
+              "refresh_thumbnail_async crashed for #{google_doc_id}: #{Exception.message(e)}"
+            )
+
+            send(caller_pid, {:thumbnail_refresh_failed, google_doc_id, :internal_error})
+        catch
+          kind, reason ->
+            Logger.error(
+              "refresh_thumbnail_async crashed for #{google_doc_id}: " <>
+                Exception.format_banner(kind, reason)
+            )
+
+            send(caller_pid, {:thumbnail_refresh_failed, google_doc_id, :internal_error})
+        end
+      end,
+      restart: :temporary
+    )
+
+    :ok
   end
 
   defp schema_type(Template), do: :template

@@ -1,3 +1,40 @@
+## 0.9.6 - 2026-09-21
+
+### Added
+
+- "Refresh thumbnail" action on document and template cards, for when
+  Drive's lazily rendered thumbnail lags behind the file's content.
+  `Documents.refresh_thumbnail/2` fetches a fresh image, overwrites the
+  cached one and logs `file.thumbnail_refreshed`; a failure leaves the
+  cached thumbnail untouched. `Documents.refresh_thumbnail_async/3` is the
+  LiveView variant: it always answers the caller with
+  `{:thumbnail_refreshed, id, data_uri}` or
+  `{:thumbnail_refresh_failed, id, reason}`, even when the fetch raises,
+  throws or exits.
+
+### Changed
+
+- Composed documents: every appended template is now its own Google Docs
+  section (`insertSectionBreak`, next page) carrying that template's own page
+  margins, instead of being poured into the first template's margins. The
+  margins are read from the template's first section, falling back to its
+  document style, and ride in the same atomic batch as the content, so a
+  rejected margin request fails the compose. Headers, footers and page size
+  still come from the first template.
+- Upgraded locked dependencies: `phoenix_kit` 2.28.2 → 2.35.0, `etcher`
+  0.14.0 → 0.16.0, `fresco` 0.12.0 → 0.12.2, `mint` 1.10.0 → 1.10.1. The
+  `:phoenix_kit` requirement is unchanged (`~> 2.21 and >= 2.21.3`).
+
+### Fixed
+
+- Appended template sections keep their font sizes, bold and paragraph
+  spacing. Paragraph style is now sent before character style (an
+  `updateParagraphStyle` that names `namedStyleType` resets text style), and
+  paragraph properties the template leaves unset are replayed as unset, so
+  they resolve against the named style instead of being pinned to
+  START / 100% / 0pt. A dimension that carries a unit but no magnitude is read
+  as an explicit zero, not as "inherit".
+
 ## 0.9.5 - 2026-09-17
 
 ### Added

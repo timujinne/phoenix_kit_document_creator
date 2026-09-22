@@ -377,6 +377,35 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLiveTest do
       assert MapSet.size(:sys.get_state(view.pid).socket.assigns.pending_files) == 0
     end
 
+    test "refresh_thumbnail event ignores unknown file_id (verify_known_file guard)",
+         %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      render_click(view, "refresh_thumbnail", %{"id" => "ghost"})
+
+      assert MapSet.size(:sys.get_state(view.pid).socket.assigns.pending_files) == 0
+    end
+
+    test "refresh_thumbnail is a no-op when the file is already pending",
+         %{conn: conn} do
+      file_id = "pending-thumb-doc"
+
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      force_connected_render(view,
+        known_file_ids: MapSet.new([file_id]),
+        pending_files: MapSet.new([file_id])
+      )
+
+      render_click(view, "refresh_thumbnail", %{"id" => file_id})
+
+      # The already-pending guard short-circuits before scheduling another
+      # async task — pending_files stays exactly as seeded, not doubled up.
+      assert :sys.get_state(view.pid).socket.assigns.pending_files == MapSet.new([file_id])
+    end
+
     test "refresh event triggers sync.triggered activity log + sync flow",
          %{conn: conn} do
       scope = fake_scope()
@@ -518,15 +547,66 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLiveTest do
       _ = render(view)
     end
 
-    test "handle_info {:thumbnail_result, ...} stores the data URI", %{conn: conn} do
+    test "handle_info {:thumbnail_result, ...} stores the data URI and leaves pending_files alone",
+         %{conn: conn} do
       conn = put_test_scope(conn, fake_scope())
       {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      # A background thumbnail landing while e.g. a delete is in flight must
+      # not clear that action's spinner.
+      force_connected_render(view, pending_files: MapSet.new(["doc-thumb-1"]))
 
       send(view.pid, {:thumbnail_result, "doc-thumb-1", "data:image/png;base64,XYZ"})
       _ = render(view)
 
-      assert :sys.get_state(view.pid).socket.assigns.thumbnails["doc-thumb-1"] ==
-               "data:image/png;base64,XYZ"
+      state = :sys.get_state(view.pid).socket.assigns
+      assert state.thumbnails["doc-thumb-1"] == "data:image/png;base64,XYZ"
+      assert MapSet.member?(state.pending_files, "doc-thumb-1")
+    end
+
+    test "handle_info {:thumbnail_refreshed, ...} stores the data URI and clears pending_files",
+         %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      force_connected_render(view, pending_files: MapSet.new(["doc-thumb-4"]))
+
+      send(view.pid, {:thumbnail_refreshed, "doc-thumb-4", "data:image/png;base64,NEW"})
+      _ = render(view)
+
+      state = :sys.get_state(view.pid).socket.assigns
+      assert state.thumbnails["doc-thumb-4"] == "data:image/png;base64,NEW"
+      refute MapSet.member?(state.pending_files, "doc-thumb-4")
+    end
+
+    test "handle_info {:thumbnail_refresh_failed, ...} sets a translated error and clears pending_files",
+         %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      force_connected_render(view, pending_files: MapSet.new(["doc-thumb-2"]))
+
+      send(view.pid, {:thumbnail_refresh_failed, "doc-thumb-2", :timeout})
+      _ = render(view)
+
+      state = :sys.get_state(view.pid).socket.assigns
+      refute MapSet.member?(state.pending_files, "doc-thumb-2")
+      assert state.error == "Failed to refresh the thumbnail. Please try again."
+    end
+
+    test "handle_info {:thumbnail_refresh_failed, ...} renders the mapped reason's own message",
+         %{conn: conn} do
+      conn = put_test_scope(conn, fake_scope())
+      {:ok, view, _html} = live(conn, "/en/admin/document-creator")
+
+      force_connected_render(view, pending_files: MapSet.new(["doc-thumb-3"]))
+
+      send(view.pid, {:thumbnail_refresh_failed, "doc-thumb-3", :thumbnail_fetch_failed})
+      _ = render(view)
+
+      state = :sys.get_state(view.pid).socket.assigns
+      refute MapSet.member?(state.pending_files, "doc-thumb-3")
+      assert state.error == Errors.message(:thumbnail_fetch_failed)
     end
 
     test "handle_info :poll_for_changes is a no-op when loading", %{conn: conn} do
@@ -1323,8 +1403,9 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLiveTest do
       assert html =~ "https://docs.google.com/document/d/#{id}/edit"
       assert html =~ ~s(target="_blank")
       assert html =~ "hero-pencil-square"
-      # Export PDF + Delete are buttons wired to this doc's id.
+      # Export PDF + Refresh thumbnail + Delete are buttons wired to this doc's id.
       assert html =~ ~s(phx-click="export_pdf")
+      assert html =~ ~s(phx-click="refresh_thumbnail")
       assert html =~ ~s(phx-click="delete")
       assert html =~ ~s(phx-value-id="#{id}")
       assert html =~ "hero-trash"
@@ -1370,7 +1451,9 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLiveTest do
       # View action is a link to the Google Docs editor (trashed mode).
       assert html =~ "https://docs.google.com/document/d/#{id}/edit"
       assert html =~ "hero-eye"
-      # Restore is wired to this doc's id; Delete is absent in trashed mode.
+      # Refresh thumbnail is shown in trashed mode too; Restore is wired to
+      # this doc's id; Delete is absent in trashed mode.
+      assert html =~ ~s(phx-click="refresh_thumbnail")
       assert html =~ ~s(phx-click="restore")
       assert html =~ ~s(phx-value-id="#{id}")
       assert html =~ "hero-arrow-uturn-left"
@@ -1411,6 +1494,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLiveTest do
       assert html =~ "doc-card-menu-#{id}"
       assert html =~ "hero-pencil-square"
       assert html =~ "hero-arrow-down-tray"
+      assert html =~ ~s(phx-click="refresh_thumbnail")
       assert html =~ "hero-trash"
     end
   end

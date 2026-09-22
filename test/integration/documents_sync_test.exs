@@ -178,6 +178,174 @@ defmodule PhoenixKitDocumentCreator.Integration.DocumentsSyncTest do
     end
   end
 
+  describe "refresh_thumbnail/2" do
+    setup do
+      stub_name = String.to_atom("ThumbRefreshStub-#{System.unique_integer([:positive])}")
+
+      on_exit(fn ->
+        Application.delete_env(:phoenix_kit_document_creator, :req_options)
+      end)
+
+      Application.put_env(:phoenix_kit_document_creator, :req_options,
+        plug: {Req.Test, stub_name}
+      )
+
+      {:ok, stub: stub_name}
+    end
+
+    test "overwrites the stale thumbnail on success and logs activity", %{stub: stub_name} do
+      {:ok, tpl} =
+        Documents.register_existing_template(%{google_doc_id: "refresh-tpl", name: "Tpl"})
+
+      :ok = Documents.persist_thumbnail("refresh-tpl", "data:image/png;base64,STALE")
+
+      StubIntegrations.stub_request(
+        :get,
+        "/drive/v3/files/refresh-tpl",
+        {:ok,
+         %{
+           status: 200,
+           body: %{"thumbnailLink" => "https://lh3.googleusercontent.com/fresh-link"}
+         }}
+      )
+
+      Req.Test.stub(stub_name, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("content-type", "image/png")
+        |> Plug.Conn.send_resp(200, "fresh-png-bytes")
+      end)
+
+      actor_uuid = Ecto.UUID.generate()
+
+      assert {:ok, new_data_uri} =
+               Documents.refresh_thumbnail("refresh-tpl", actor_uuid: actor_uuid)
+
+      assert new_data_uri != "data:image/png;base64,STALE"
+
+      reloaded = TestRepo.get(Template, tpl.uuid)
+      assert reloaded.thumbnail == new_data_uri
+
+      assert_activity_logged("file.thumbnail_refreshed",
+        actor_uuid: actor_uuid,
+        metadata_has: %{"google_doc_id" => "refresh-tpl"}
+      )
+    end
+
+    test "leaves the existing thumbnail untouched on failure and logs db_pending" do
+      {:ok, tpl} =
+        Documents.register_existing_template(%{google_doc_id: "refresh-fail-tpl", name: "Tpl"})
+
+      :ok = Documents.persist_thumbnail("refresh-fail-tpl", "data:image/png;base64,STALE")
+
+      StubIntegrations.stub_request(
+        :get,
+        "/drive/v3/files/refresh-fail-tpl",
+        {:ok, %{status: 404, body: %{}}}
+      )
+
+      actor_uuid = Ecto.UUID.generate()
+
+      assert {:error, _reason} =
+               Documents.refresh_thumbnail("refresh-fail-tpl", actor_uuid: actor_uuid)
+
+      reloaded = TestRepo.get(Template, tpl.uuid)
+      assert reloaded.thumbnail == "data:image/png;base64,STALE"
+
+      assert_activity_logged("file.thumbnail_refreshed",
+        actor_uuid: actor_uuid,
+        metadata_has: %{"google_doc_id" => "refresh-fail-tpl", "db_pending" => true}
+      )
+    end
+  end
+
+  describe "refresh_thumbnail_async/3" do
+    setup do
+      stub_name = String.to_atom("ThumbRefreshAsyncStub-#{System.unique_integer([:positive])}")
+
+      on_exit(fn ->
+        Application.delete_env(:phoenix_kit_document_creator, :req_options)
+      end)
+
+      Application.put_env(:phoenix_kit_document_creator, :req_options,
+        plug: {Req.Test, stub_name}
+      )
+
+      {:ok, stub: stub_name}
+    end
+
+    test "sends :thumbnail_refreshed to the caller on success", %{stub: stub_name} do
+      {:ok, _tpl} =
+        Documents.register_existing_template(%{google_doc_id: "refresh-async-tpl", name: "Tpl"})
+
+      StubIntegrations.stub_request(
+        :get,
+        "/drive/v3/files/refresh-async-tpl",
+        {:ok,
+         %{
+           status: 200,
+           body: %{"thumbnailLink" => "https://lh3.googleusercontent.com/async-link"}
+         }}
+      )
+
+      Req.Test.stub(stub_name, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("content-type", "image/png")
+        |> Plug.Conn.send_resp(200, "async-png-bytes")
+      end)
+
+      assert :ok = Documents.refresh_thumbnail_async("refresh-async-tpl", self())
+      assert_receive {:thumbnail_refreshed, "refresh-async-tpl", _data_uri}, 1000
+      refute_received {:thumbnail_result, "refresh-async-tpl", _}
+    end
+
+    test "sends :thumbnail_refresh_failed to the caller on failure" do
+      {:ok, _tpl} =
+        Documents.register_existing_template(%{google_doc_id: "refresh-async-fail", name: "Tpl"})
+
+      StubIntegrations.stub_request(
+        :get,
+        "/drive/v3/files/refresh-async-fail",
+        {:ok, %{status: 404, body: %{}}}
+      )
+
+      # No Req.Test stub needed — the metadata call fails before any image fetch.
+      assert :ok = Documents.refresh_thumbnail_async("refresh-async-fail", self())
+      assert_receive {:thumbnail_refresh_failed, "refresh-async-fail", _reason}, 1000
+    end
+
+    test "notifies the caller with :internal_error when the fetch crashes instead of failing cleanly" do
+      {:ok, _tpl} =
+        Documents.register_existing_template(%{google_doc_id: "refresh-crash-tpl", name: "Tpl"})
+
+      # A raising stub simulates an unexpected crash inside the task body
+      # (e.g. a transient DB error from persist_thumbnail/2) — the rescue
+      # clause must still notify the caller instead of leaving it hanging.
+      StubIntegrations.stub_request(
+        :get,
+        "/drive/v3/files/refresh-crash-tpl",
+        fn -> raise "boom" end
+      )
+
+      assert :ok = Documents.refresh_thumbnail_async("refresh-crash-tpl", self())
+      assert_receive {:thumbnail_refresh_failed, "refresh-crash-tpl", :internal_error}, 1000
+    end
+
+    test "notifies the caller with :internal_error when the fetch exits" do
+      {:ok, _tpl} =
+        Documents.register_existing_template(%{google_doc_id: "refresh-exit-tpl", name: "Tpl"})
+
+      # `rescue` alone doesn't see an exit (e.g. a pool checkout timeout).
+      StubIntegrations.stub_request(
+        :get,
+        "/drive/v3/files/refresh-exit-tpl",
+        fn -> exit(:checkout_timeout) end
+      )
+
+      assert :ok = Documents.refresh_thumbnail_async("refresh-exit-tpl", self())
+      assert_receive {:thumbnail_refresh_failed, "refresh-exit-tpl", :internal_error}, 1000
+    end
+  end
+
   describe "move_to_templates / move_to_documents" do
     test "move_to_templates returns :ok and updates path/folder" do
       {:ok, _doc} =

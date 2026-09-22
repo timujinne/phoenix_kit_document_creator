@@ -1679,10 +1679,11 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   @doc """
   Append a template's content to an existing Google Doc via batchUpdate.
 
-  Inserts a paragraph break, a page break, then the content of
-  `template_doc_id` into `target_doc_id`. Returns `{:ok, {start_index,
-  end_index}}` representing the character range of the inserted content —
-  callers use this for section-scoped substitution.
+  Inserts a section break (next page), then the content of `template_doc_id`
+  into `target_doc_id`, then gives the new section the template's own page
+  margins. Returns `{:ok, {start_index, end_index}}` representing the
+  character range of the inserted content — callers use this for
+  section-scoped substitution.
 
   Paragraph text is inserted via a single `insertText`, same as before this
   function also handled tables. Tables are NOT part of that flattened text —
@@ -1724,48 +1725,57 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   `table_column_width_requests/2`'s doc). Per-run character style — bold,
   italic, font size, foreground color — is captured for both table cell
   text and the section's own (non-table) body text, and replayed via
-  `updateTextStyle` immediately after the corresponding `insertText`. Every
-  inserted character is covered by an explicit range, including `bold:
-  false`/`italic: false` for plain runs, so freshly inserted text can never
-  silently inherit formatting from neighboring content already in the
-  target document.
+  `updateTextStyle` in the same batch as the corresponding `insertText`
+  (after that text's paragraph style — see below). Every inserted character
+  is covered by an explicit range, including `bold: false`/`italic: false`
+  for plain runs, so freshly inserted text can never silently inherit
+  formatting from neighboring content already in the target document.
 
   Paragraph-level style — alignment, line spacing, space above/below, named
   style type (headings), start/first-line indentation — is captured the
   same way and replayed via `updateParagraphStyle`
   (`paragraph_style_requests/2`), same anti-inheritance guarantee: every
-  field is always stated explicitly. List bullets are replayed via
+  field is always in the mask — with the template's value, or unset so it
+  resolves against the paragraph's named style in the target document.
+  Paragraph style is always sent BEFORE character style
+  (`paragraph_then_text_style_requests/3`): an `updateParagraphStyle` whose
+  mask includes `namedStyleType` resets the paragraph's text style, even
+  when the named style doesn't change, so the opposite order silently
+  stripped every appended section of its font sizes and bold. That reset is
+  not in Google's public API reference — verified live 2026-09-21, and no
+  mock-based test can guard it. List bullets are replayed via
   `createParagraphBullets` (`paragraph_bullet_requests/2`), resolving
   bulleted vs numbered from the source and mapping to Google's own default
   preset for that family — this reproduces glyph *family*, not an arbitrary
   custom glyph/format exactly (see `extract_bullet_info/2`'s doc).
 
-  The leading `insertText(insert_index, "\\n")` exists ONLY to make this
-  safe for the appended section's own first paragraph. `insertPageBreak`
-  inserts an inline element — it does not split a paragraph — and, without
-  it, the appended content would start one position before the target
-  document's own closing character. Verified live: that closing character
-  is not a separate, shiftable paragraph separator, it's the document's
-  shared terminal marker, so inserting immediately before it (as this
-  function did before this `"\\n"` was added) always continued the
-  target's existing last paragraph — meaning `updateParagraphStyle`/
-  `createParagraphBullets` on the appended section's first paragraph (they
-  target whole paragraphs, not sub-ranges) silently reformatted the
-  *preceding* section's trailing text too. A first attempt at fixing this
-  tried detecting the condition instead of forcing it (skip styling that
-  first paragraph only when the target's own last paragraph didn't already
-  end in `"\\n"`) — that check always came back "safe" for real documents,
-  since a paragraph's own trailing `"\\n"`, when present, IS the shared
-  terminal marker rather than a boundary the appended content lands after,
-  so the check was inert and still corrupted the preceding paragraph live.
-  Explicitly inserting a real paragraph break first, ahead of the page
-  break, is what actually guarantees the appended section starts in a
-  fresh, empty paragraph — the same guarantee a table's cells already get
-  for free from a bare `insertTable`. `content_start` shifts by one extra
-  unit accordingly (`insert_index + 2`, not `+ 1`) to land after both the
-  new paragraph break and the page break; every offset downstream
-  (`body_runs`, `body_paragraphs`, the table marker pipeline) is anchored
-  at `content_start` and unaffected by the shift itself.
+  Each appended template becomes its own document SECTION: the content is
+  preceded by `insertSectionBreak` (`NEXT_PAGE`, so it still starts on a new
+  page) rather than a page break, and the section then gets the template's
+  own page margins via `updateSectionStyle` (`section_margin_requests/2`).
+  Margins are a document-level setting otherwise, so a contract laid out
+  for 72pt margins used to be poured into whatever the first template's
+  were. The margins ride in the same atomic batch as the content, on
+  purpose: a composed document with the wrong margins is the very defect
+  this exists to prevent, so a margin request Google rejects fails the
+  append (and the compose) loudly rather than leaving a quietly mis-laid-out
+  document behind. Traps (the first two verified live 2026-09-21):
+
+    * A section break inserts a newline ahead of itself, so the appended
+      content starts at `insert_index + 2` — in a fresh, empty paragraph of
+      the new section. That fresh paragraph is what makes paragraph-level
+      styling safe for the section's own first paragraph:
+      `updateParagraphStyle`/`createParagraphBullets` target whole
+      paragraphs, and content that merely continued the target's last
+      paragraph would reformat the preceding section's trailing text too.
+      (The target's closing character is the document's shared terminal
+      marker, not a shiftable paragraph separator — a page break alone, an
+      inline element, never split it, which is why this used to insert its
+      own `"\\n"` first.)
+    * `updateDocumentStyle` on margins overwrites the margins of EVERY
+      section, silently. Nothing here sends it; anything that ever does must
+      run before the section margins are set.
+    * Page size is document-wide in the API — a section cannot have its own.
 
   Known limitations: cell shading, borders, and merged cells are not
   restored — `insertTable` creates a bare table beyond the column widths
@@ -1788,27 +1798,22 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
          {:ok, %{body: current_doc}} <- get_fn.(target_doc_id) do
       end_index = document_end_index(current_doc)
       insert_index = max(end_index - 1, 1)
-      page_break_index = insert_index + 1
-      content_start = page_break_index + 1
+      content_start = insert_index + 2
 
-      # A literal "\n" inserted here, one position ahead of everything else,
-      # is what makes paragraph-level styling safe for this section's own
-      # first paragraph — see this function's doc for why it's needed:
-      # insertPageBreak alone inserts an inline element, it does not split a
-      # paragraph, so without this the appended content would always start
-      # inside the target's existing last paragraph, and
-      # updateParagraphStyle/createParagraphBullets (whole-paragraph,
-      # not sub-range) would reformat that pre-existing content too.
+      # insertSectionBreak puts a newline ahead of itself, so content_start
+      # lands in the new section's own fresh paragraph — see this function's
+      # doc. The section margins are position-independent within the batch
+      # (the new section always holds at least its terminal paragraph, and
+      # nothing in the batch moves content_start); last by convention.
       requests =
         [
-          %{insertText: %{location: %{index: insert_index}, text: "\n"}},
-          %{insertPageBreak: %{location: %{index: page_break_index}}},
+          %{insertSectionBreak: %{location: %{index: insert_index}, sectionType: "NEXT_PAGE"}},
           %{insertText: %{location: %{index: content_start}, text: text}}
         ] ++
-          text_style_requests(content_start, body_runs) ++
-          paragraph_style_requests(content_start, body_paragraphs) ++
+          paragraph_then_text_style_requests(content_start, body_paragraphs, body_runs) ++
           clear_inherited_bullets(content_start, text) ++
-          paragraph_bullet_requests(content_start, body_paragraphs)
+          paragraph_bullet_requests(content_start, body_paragraphs) ++
+          section_margin_requests(content_start, template_doc)
 
       case batch_fn.(target_doc_id, requests) do
         {:ok, _} ->
@@ -2209,18 +2214,20 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
 
   defp cell_paragraph_spans(_, _doc_lists), do: []
 
-  # Alignment/spacing/named-style defaults a paragraph gets when Google omits
-  # the corresponding `paragraphStyle` key (i.e. what a paragraph with no
-  # explicit style already renders as) — used for the anti-inheritance
-  # guarantee: a captured span always states every field explicitly, so a
-  # freshly inserted/split paragraph in the target document can never
-  # silently inherit alignment/spacing/named style from whatever paragraph
-  # sat at the insertion point, the same philosophy `text_style_fields/1`
-  # already applies to bold/italic.
-  @default_alignment "START"
-  @default_line_spacing 100.0
+  # A `paragraphStyle` key Google omits is NOT "the API default" — it means
+  # the paragraph inherits that property from its named style (a template
+  # whose NORMAL_TEXT says 115% line spacing, a heading relying on
+  # HEADING_1's own space above/below). It is captured as `nil` and replayed
+  # as an explicit *unset* (see `paragraph_style_requests/2`), which still
+  # gives the anti-inheritance guarantee: a freshly inserted/split paragraph
+  # can never silently keep alignment/spacing from whatever paragraph sat at
+  # the insertion point. Substituting a concrete default here instead (as
+  # this used to: START / 100% / zero spacing) flattened every appended
+  # section's spacing to values its template never asked for.
+  #
+  # `namedStyleType` alone keeps a concrete fallback — every paragraph has
+  # one, and it is what the unset properties resolve against.
   @default_named_style_type "NORMAL_TEXT"
-  @zero_dimension %{magnitude: 0.0, unit: "PT"}
 
   defp paragraph_span(paragraph, start_offset, length, doc_lists) do
     %{
@@ -2231,28 +2238,42 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
     }
   end
 
+  # NB an unset property resolves against the TARGET document's named
+  # styles. The target is a copy of the first template, and later templates'
+  # named-style definitions are not carried over, so the replay matches the
+  # template exactly only where the two documents' named styles agree.
   defp extract_paragraph_style(paragraph, _doc_lists) do
     style = Map.get(paragraph, "paragraphStyle", %{})
 
     %{
-      alignment: Map.get(style, "alignment", @default_alignment),
-      line_spacing: numeric_or_default(Map.get(style, "lineSpacing"), @default_line_spacing),
-      space_above: dimension_or_default(Map.get(style, "spaceAbove")),
-      space_below: dimension_or_default(Map.get(style, "spaceBelow")),
+      alignment: Map.get(style, "alignment"),
+      line_spacing: numeric_or_nil(Map.get(style, "lineSpacing")),
+      space_above: dimension_or_nil(Map.get(style, "spaceAbove")),
+      space_below: dimension_or_nil(Map.get(style, "spaceBelow")),
       named_style_type: Map.get(style, "namedStyleType", @default_named_style_type),
-      indent_start: dimension_or_default(Map.get(style, "indentStart")),
-      indent_first_line: dimension_or_default(Map.get(style, "indentFirstLine"))
+      indent_start: dimension_or_nil(Map.get(style, "indentStart")),
+      indent_first_line: dimension_or_nil(Map.get(style, "indentFirstLine"))
     }
   end
 
-  defp numeric_or_default(n, _default) when is_number(n), do: n * 1.0
-  defp numeric_or_default(_, default), do: default
+  defp numeric_or_nil(n) when is_number(n), do: n * 1.0
+  defp numeric_or_nil(_), do: nil
 
-  defp dimension_or_default(%{"magnitude" => m} = dimension) when is_number(m) do
+  # Only an ABSENT key means "inherit". A dimension that is present but
+  # carries no magnitude — `%{"unit" => "PT"}` — is an explicit zero: the API
+  # omits a zero `magnitude` from its JSON (verified live 2026-09-21: a
+  # HEADING_1 paragraph whose space above was set to 0pt reads back as
+  # `"spaceAbove" => %{"unit" => "PT"}`, one that inherits it has no
+  # `spaceAbove` key at all). Reading it as "inherit" would hand a heading
+  # its named style's spacing back after the template author removed it.
+  defp dimension_or_nil(%{"magnitude" => m} = dimension) when is_number(m) do
     %{magnitude: m * 1.0, unit: Map.get(dimension, "unit", "PT")}
   end
 
-  defp dimension_or_default(_), do: @zero_dimension
+  defp dimension_or_nil(%{"unit" => unit}) when is_binary(unit),
+    do: %{magnitude: 0.0, unit: unit}
+
+  defp dimension_or_nil(_), do: nil
 
   # List membership: only glyph *family* (bulleted vs numbered) is
   # reproduced, via Google's own default preset for that family
@@ -2396,6 +2417,64 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
     end)
   end
 
+  @section_margin_fields ~w(marginTop marginBottom marginLeft marginRight marginHeader marginFooter)
+
+  @doc """
+  Builds the `updateSectionStyle` request that gives an appended section its
+  template's own page margins. `section_index` is any index inside the
+  section — `append_template/3` passes the section's `content_start`.
+
+  The margins are the ones the template's own first page renders with: its
+  first section's `sectionStyle.margin*` where set, else
+  `documentStyle.margin*` — the API's own resolution order (a section margin
+  left unset defaults to the document's). A template that is itself a
+  composed document carries per-section margins this way, and reading
+  `documentStyle` alone would hand its first section the wrong ones.
+
+  Only the margins the template actually states are touched; a margin
+  present without a magnitude is an explicit zero (the API omits a zero
+  magnitude from its JSON — see `dimension_or_nil/1`). No margins in either
+  place produces no request.
+  """
+  @spec section_margin_requests(non_neg_integer(), map()) :: [map()]
+  def section_margin_requests(section_index, template_doc) do
+    document_style = Map.get(template_doc, "documentStyle") || %{}
+    section_style = first_section_style(template_doc)
+
+    margins =
+      Enum.flat_map(@section_margin_fields, fn field ->
+        case dimension_or_nil(Map.get(section_style, field) || Map.get(document_style, field)) do
+          nil -> []
+          dimension -> [{field, dimension_payload(dimension)}]
+        end
+      end)
+
+    case margins do
+      [] ->
+        []
+
+      margins ->
+        [
+          %{
+            "updateSectionStyle" => %{
+              "range" => %{"startIndex" => section_index, "endIndex" => section_index + 1},
+              "sectionStyle" => Map.new(margins),
+              "fields" => Enum.map_join(margins, ",", &elem(&1, 0))
+            }
+          }
+        ]
+    end
+  end
+
+  # A body's first structural element is always the section break that
+  # opens its first section.
+  defp first_section_style(template_doc) do
+    case get_in(template_doc, ["body", "content"]) do
+      [%{"sectionBreak" => %{"sectionStyle" => %{} = style}} | _] -> style
+      _ -> %{}
+    end
+  end
+
   defp text_insert_request(idx, text),
     do: %{"insertText" => %{"location" => %{"index" => idx}, "text" => text}}
 
@@ -2412,9 +2491,11 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   content (seen live: an appended section's plain paragraph inheriting bold
   from an adjacent heading).
 
-  Safe to batch immediately after the insert it styles: text style changes
-  never shift document character indices, so nothing else in the same batch
-  needs to account for these requests' presence.
+  Safe to batch with the insert it styles: text style changes never shift
+  document character indices, so nothing else in the same batch needs to
+  account for these requests' presence. One ordering contract: for the same
+  range these must come AFTER `paragraph_style_requests/2`, which resets
+  text style — use `paragraph_then_text_style_requests/3`.
   """
   @spec text_style_requests(integer(), [map()]) :: [map()]
   def text_style_requests(base_index, runs) when is_list(runs) do
@@ -2500,12 +2581,16 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   `body_paragraphs`), anchored at `base_index` the same way
   `text_style_requests/2` anchors character runs.
 
-  Every field is always included in the request, including values that
-  merely reproduce Google's own default (`alignment: "START"`, `lineSpacing:
-  100.0`, zero spacing/indentation, `namedStyleType: "NORMAL_TEXT"`) — the
+  Every field is always included in the request's `fields` mask — the
   same anti-inheritance guarantee `text_style_fields/1` applies to
-  bold/italic: a newly split paragraph in the target document otherwise
-  inherits alignment/spacing/named style from whatever paragraph sat at the
+  bold/italic. A property the template paragraph doesn't set (captured as
+  `nil`) is left out of the payload, which the Docs API reads as "unset":
+  it then resolves against the paragraph's named style in the target
+  document (the same result as in the template wherever the two documents'
+  named styles agree — see `extract_paragraph_style/2`), instead of being
+  pinned to a concrete value the template never asked for. Without the
+  complete mask, a newly split paragraph in the target document would
+  inherit alignment/spacing/named style from whatever paragraph sat at the
   insertion point (e.g. an appended section's plain paragraph picking up
   CENTER alignment from a neighboring heading), not from the source
   template.
@@ -2525,8 +2610,11 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   either way, so the natural length lands the range exactly on it. See
   `cell_paragraph_spans/2`'s doc for the full argument.
 
-  Safe to batch immediately after the insert/fill it styles: like character
-  style changes, paragraph style changes never shift document indices.
+  Safe to batch with the insert/fill it styles: like character style
+  changes, paragraph style changes never shift document indices. They DO
+  reset the text style of the paragraphs they touch (the mask includes
+  `namedStyleType`), so for the same range they must come BEFORE
+  `text_style_requests/2` — use `paragraph_then_text_style_requests/3`.
   """
   @spec paragraph_style_requests(integer(), [map()]) :: [map()]
   def paragraph_style_requests(base_index, spans) when is_list(spans) do
@@ -2545,15 +2633,16 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
     %{
       "updateParagraphStyle" => %{
         "range" => %{"startIndex" => range_start, "endIndex" => range_end},
-        "paragraphStyle" => %{
-          "alignment" => style.alignment,
-          "lineSpacing" => style.line_spacing,
-          "spaceAbove" => dimension_payload(style.space_above),
-          "spaceBelow" => dimension_payload(style.space_below),
-          "namedStyleType" => style.named_style_type,
-          "indentStart" => dimension_payload(style.indent_start),
-          "indentFirstLine" => dimension_payload(style.indent_first_line)
-        },
+        "paragraphStyle" =>
+          reject_unset(%{
+            "alignment" => style.alignment,
+            "lineSpacing" => style.line_spacing,
+            "spaceAbove" => dimension_payload(style.space_above),
+            "spaceBelow" => dimension_payload(style.space_below),
+            "namedStyleType" => style.named_style_type,
+            "indentStart" => dimension_payload(style.indent_start),
+            "indentFirstLine" => dimension_payload(style.indent_first_line)
+          }),
         "fields" =>
           "alignment,lineSpacing,spaceAbove,spaceBelow,namedStyleType,indentStart,indentFirstLine"
       }
@@ -2562,6 +2651,14 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
 
   defp dimension_payload(%{magnitude: magnitude, unit: unit}),
     do: %{"magnitude" => magnitude, "unit" => unit}
+
+  defp dimension_payload(nil), do: nil
+
+  # A property named in the `fields` mask but absent from the payload is how
+  # the Docs API spells "unset it" (verified live) — the mask always stays
+  # complete, so nothing is ever left to inherit from neighboring content.
+  defp reject_unset(paragraph_style),
+    do: Map.reject(paragraph_style, fn {_key, value} -> is_nil(value) end)
 
   @doc """
   Builds `createParagraphBullets` requests replaying captured list
@@ -2602,8 +2699,8 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
 
   # List membership lives on `paragraph.bullet`, which updateParagraphStyle
   # cannot touch — only deleteParagraphBullets clears it. When the target
-  # document's last paragraph is a list item, the "\n" split that opens the
-  # append (see append_template/3) leaves the fresh first paragraph a list
+  # document's last paragraph is a list item, the paragraph split the section
+  # break makes (see append_template/3) leaves the fresh first paragraph a list
   # item too, so the appended section's heading would render with a stray
   # bullet glyph. One delete over the whole inserted body clears anything
   # inherited; the createParagraphBullets requests that follow re-create the
@@ -2659,8 +2756,9 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
   # list. Fills must be applied in descending index order ACROSS tables (not
   # just within one), since an earlier insert would otherwise shift a later
   # table's captured cell indices. Each cell's `insertText` is immediately
-  # followed by its `text_style_requests/2` (safe within the same descending
-  # pass — style requests don't shift indices, see that function's doc).
+  # followed by its own style requests — paragraph, then character, see
+  # `paragraph_then_text_style_requests/3` (safe within the same descending
+  # pass — style requests don't shift indices).
   defp build_table_fill_requests(marker_ranges, new_tables, tables_by_index) do
     matched = marker_ranges |> Enum.sort_by(& &1.start_index) |> Enum.zip(new_tables)
 
@@ -2702,9 +2800,20 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
     do: paragraph_style_requests(idx, paragraphs)
 
   defp cell_fill_requests(idx, text, runs, paragraphs) do
-    [text_insert_request(idx, text) | text_style_requests(idx, runs)] ++
-      paragraph_style_requests(idx, paragraphs) ++ paragraph_bullet_requests(idx, paragraphs)
+    [text_insert_request(idx, text) | paragraph_then_text_style_requests(idx, paragraphs, runs)] ++
+      paragraph_bullet_requests(idx, paragraphs)
   end
+
+  # The one place the two style kinds are put in order, for body text and
+  # table cells alike: paragraph style first. An `updateParagraphStyle` whose
+  # mask includes `namedStyleType` resets the text style of the paragraphs
+  # it touches, so character style sent before it is wiped (see
+  # `append_template/3`'s doc). Neither kind shifts indices, so both share
+  # the same `base_index`.
+  @doc false
+  @spec paragraph_then_text_style_requests(integer(), [map()], [map()]) :: [map()]
+  def paragraph_then_text_style_requests(base_index, paragraphs, runs),
+    do: paragraph_style_requests(base_index, paragraphs) ++ text_style_requests(base_index, runs)
 
   @doc """
   Return the range `{1, end_index}` of the current content in a Google Doc.
