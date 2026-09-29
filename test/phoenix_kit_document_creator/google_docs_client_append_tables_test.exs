@@ -1028,6 +1028,13 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClientAppendTablesTest do
                           "deleteParagraphBullets" => %{
                             "range" => %{"startIndex" => 11, "endIndex" => 23}
                           }
+                        },
+                        %{
+                          "updateSectionStyle" => %{
+                            "range" => %{"startIndex" => 11, "endIndex" => 12},
+                            "sectionStyle" => %{"flipPageOrientation" => false},
+                            "fields" => "flipPageOrientation"
+                          }
                         }
                       ]}
 
@@ -1205,6 +1212,13 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClientAppendTablesTest do
                         %{
                           "deleteParagraphBullets" => %{
                             "range" => %{"startIndex" => 11, "endIndex" => delete_bullets_end}
+                          }
+                        },
+                        %{
+                          "updateSectionStyle" => %{
+                            "range" => %{"startIndex" => 11, "endIndex" => 12},
+                            "sectionStyle" => %{"flipPageOrientation" => false},
+                            "fields" => "flipPageOrientation"
                           }
                         }
                       ]}
@@ -2481,6 +2495,13 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClientAppendTablesTest do
                  "deleteParagraphBullets" => %{
                    "range" => %{"startIndex" => 11, "endIndex" => 31}
                  }
+               },
+               %{
+                 "updateSectionStyle" => %{
+                   "range" => %{"startIndex" => 11, "endIndex" => 12},
+                   "sectionStyle" => %{"flipPageOrientation" => false},
+                   "fields" => "flipPageOrientation"
+                 }
                }
              ] = requests
     end
@@ -2903,16 +2924,22 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClientAppendTablesTest do
                }
              } = List.last(requests)
 
+      # target has no documentStyle (append_first_batch's fixed target), so
+      # target_landscape_shaped? is false; the template's own pageSize
+      # (595x842, portrait) with no flip is also not landscape — an explicit
+      # `false` still rides along with the margins, same request, same mask.
       assert section_style == %{
                "marginTop" => points(72.0),
                "marginBottom" => points(72.0),
                "marginLeft" => points(72.0),
                "marginRight" => points(72.0),
                "marginHeader" => points(36.0),
-               "marginFooter" => points(36.0)
+               "marginFooter" => points(36.0),
+               "flipPageOrientation" => false
              }
 
-      assert fields == "marginTop,marginBottom,marginLeft,marginRight,marginHeader,marginFooter"
+      assert fields ==
+               "marginTop,marginBottom,marginLeft,marginRight,marginHeader,marginFooter,flipPageOrientation"
     end
 
     test "a zero margin (unit-only in the API's JSON) is applied as an explicit zero" do
@@ -2926,17 +2953,28 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClientAppendTablesTest do
       assert %{"updateSectionStyle" => %{"sectionStyle" => style, "fields" => fields}} =
                List.last(requests)
 
-      # Only the margins the template states are touched.
-      assert style == %{"marginTop" => points(0.0), "marginLeft" => points(44.0)}
-      assert fields == "marginTop,marginLeft"
+      # Only the margins the template states are touched — flipPageOrientation
+      # rides along regardless, since neither template nor target states a
+      # pageSize/flip (false XOR false).
+      assert style == %{
+               "marginTop" => points(0.0),
+               "marginLeft" => points(44.0),
+               "flipPageOrientation" => false
+             }
+
+      assert fields == "marginTop,marginLeft,flipPageOrientation"
     end
 
-    test "a template without a documentStyle leaves the section's margins alone" do
+    test "a template without a documentStyle still gets a section-orientation request — margins alone stay untouched" do
       template = %{"body" => %{"content" => [styled_paragraph_block(["x\n"])]}}
 
       {_range, requests} = append_first_batch(template)
 
-      refute Enum.any?(requests, &Map.has_key?(&1, "updateSectionStyle"))
+      assert [%{"updateSectionStyle" => request}] =
+               Enum.filter(requests, &Map.has_key?(&1, "updateSectionStyle"))
+
+      assert request["sectionStyle"] == %{"flipPageOrientation" => false}
+      assert request["fields"] == "flipPageOrientation"
     end
   end
 
@@ -3138,6 +3176,159 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClientAppendTablesTest do
                "marginBottom" => points(0.0),
                "marginLeft" => points(72.0)
              }
+    end
+  end
+
+  describe "section_layout_requests/3" do
+    # Living fixture (§2.2 of the spec): Google records the "Joonised
+    # (tootmine)" template's landscape pages as a portrait-shaped A4 pageSize
+    # (595.28 x 841.89) plus documentStyle.flipPageOrientation: true — its
+    # own first section carries no key of its own.
+    defp portrait_page_size, do: %{"width" => points(595.28), "height" => points(841.89)}
+    defp landscape_page_size, do: %{"width" => points(841.89), "height" => points(595.28)}
+
+    test "portrait target + landscape template (document-level flip) -> flipPageOrientation: true" do
+      template = %{
+        "documentStyle" => %{"pageSize" => portrait_page_size(), "flipPageOrientation" => true}
+      }
+
+      target = %{"documentStyle" => %{"pageSize" => portrait_page_size()}}
+
+      assert [%{"updateSectionStyle" => request}] =
+               GoogleDocsClient.section_layout_requests(11, template, target)
+
+      assert request["sectionStyle"] == %{"flipPageOrientation" => true}
+      assert request["fields"] == "flipPageOrientation"
+      assert request["range"] == %{"startIndex" => 11, "endIndex" => 12}
+    end
+
+    test "portrait target + portrait template -> flipPageOrientation: false, explicit" do
+      template = %{"documentStyle" => %{"pageSize" => portrait_page_size()}}
+      target = %{"documentStyle" => %{"pageSize" => portrait_page_size()}}
+
+      assert [%{"updateSectionStyle" => request}] =
+               GoogleDocsClient.section_layout_requests(11, template, target)
+
+      assert request["sectionStyle"] == %{"flipPageOrientation" => false}
+    end
+
+    test "landscape-looking target (document flip true, portrait-shaped pageSize) + portrait template -> false" do
+      template = %{"documentStyle" => %{"pageSize" => portrait_page_size()}}
+
+      target = %{
+        "documentStyle" => %{"pageSize" => portrait_page_size(), "flipPageOrientation" => true}
+      }
+
+      assert [%{"updateSectionStyle" => request}] =
+               GoogleDocsClient.section_layout_requests(11, template, target)
+
+      # target_landscape_shaped? only looks at the target's raw pageSize
+      # shape (see section_layout_requests/3's doc) — the target's own
+      # document-level flip doesn't enter the comparison.
+      assert request["sectionStyle"] == %{"flipPageOrientation" => false}
+    end
+
+    test "a target with a literally wide pageSize (landscape-shaped) + a portrait template -> true" do
+      template = %{"documentStyle" => %{"pageSize" => portrait_page_size()}}
+      target = %{"documentStyle" => %{"pageSize" => landscape_page_size()}}
+
+      assert [%{"updateSectionStyle" => request}] =
+               GoogleDocsClient.section_layout_requests(11, template, target)
+
+      assert request["sectionStyle"] == %{"flipPageOrientation" => true}
+    end
+
+    test "a target with a literally wide pageSize (landscape-shaped) + a template landscape by flag -> false" do
+      template = %{
+        "documentStyle" => %{"pageSize" => portrait_page_size(), "flipPageOrientation" => true}
+      }
+
+      target = %{"documentStyle" => %{"pageSize" => landscape_page_size()}}
+
+      assert [%{"updateSectionStyle" => request}] =
+               GoogleDocsClient.section_layout_requests(11, template, target)
+
+      assert request["sectionStyle"] == %{"flipPageOrientation" => false}
+    end
+
+    test "a template's own section-level flipPageOrientation wins over its documentStyle's, even when false" do
+      template = %{
+        "documentStyle" => %{"pageSize" => portrait_page_size(), "flipPageOrientation" => true},
+        "body" => %{
+          "content" => [
+            %{"sectionBreak" => %{"sectionStyle" => %{"flipPageOrientation" => false}}}
+          ]
+        }
+      }
+
+      target = %{"documentStyle" => %{"pageSize" => portrait_page_size()}}
+
+      assert [%{"updateSectionStyle" => request}] =
+               GoogleDocsClient.section_layout_requests(11, template, target)
+
+      assert request["sectionStyle"] == %{"flipPageOrientation" => false}
+    end
+
+    test "a template with a literally wide pageSize and no flip is landscape too" do
+      template = %{"documentStyle" => %{"pageSize" => landscape_page_size()}}
+      target = %{"documentStyle" => %{"pageSize" => portrait_page_size()}}
+
+      assert [%{"updateSectionStyle" => request}] =
+               GoogleDocsClient.section_layout_requests(11, template, target)
+
+      assert request["sectionStyle"] == %{"flipPageOrientation" => true}
+    end
+
+    test "a non-boolean flipPageOrientation at either level reads as unset, not as a flip" do
+      template = %{
+        "documentStyle" => %{"pageSize" => portrait_page_size(), "flipPageOrientation" => nil},
+        "body" => %{
+          "content" => [
+            %{"sectionBreak" => %{"sectionStyle" => %{"flipPageOrientation" => nil}}}
+          ]
+        }
+      }
+
+      target = %{"documentStyle" => %{"pageSize" => portrait_page_size()}}
+
+      assert [%{"updateSectionStyle" => request}] =
+               GoogleDocsClient.section_layout_requests(11, template, target)
+
+      assert request["sectionStyle"] == %{"flipPageOrientation" => false}
+    end
+
+    test "a template without a documentStyle still produces a request — the single flipPageOrientation: false field" do
+      assert [%{"updateSectionStyle" => request}] =
+               GoogleDocsClient.section_layout_requests(11, %{}, %{})
+
+      assert request["sectionStyle"] == %{"flipPageOrientation" => false}
+      assert request["fields"] == "flipPageOrientation"
+      assert request["range"] == %{"startIndex" => 11, "endIndex" => 12}
+    end
+
+    test "margins and the flip share the same request, mask, and range — margins first, flip last" do
+      template = %{
+        "documentStyle" => %{
+          "marginTop" => points(72),
+          "marginLeft" => points(72),
+          "pageSize" => landscape_page_size()
+        }
+      }
+
+      target = %{"documentStyle" => %{"pageSize" => portrait_page_size()}}
+
+      assert [%{"updateSectionStyle" => request}] =
+               GoogleDocsClient.section_layout_requests(7, template, target)
+
+      assert request["fields"] == "marginTop,marginLeft,flipPageOrientation"
+
+      assert request["sectionStyle"] == %{
+               "marginTop" => points(72.0),
+               "marginLeft" => points(72.0),
+               "flipPageOrientation" => true
+             }
+
+      assert request["range"] == %{"startIndex" => 7, "endIndex" => 8}
     end
   end
 

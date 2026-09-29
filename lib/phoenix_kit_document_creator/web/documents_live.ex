@@ -115,10 +115,20 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
 
   @impl true
   def handle_params(params, uri, socket) do
-    title =
+    # The Documents list is the module's landing page: the module is the
+    # title there and there is no section. Templates sits under it.
+    socket =
       case socket.assigns.live_action do
-        :templates -> gettext("Templates")
-        _ -> gettext("Documents")
+        :templates ->
+          Helpers.assign_trail(socket, gettext("Templates"))
+
+        _ ->
+          assign(socket,
+            page_section: nil,
+            page_section_path: nil,
+            page_crumbs: [],
+            page_title: gettext("Document Creator")
+          )
       end
 
     url_path = URI.parse(uri).path || "/"
@@ -143,7 +153,6 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
 
     socket =
       assign(socket,
-        page_title: title,
         url_path: url_path,
         page: page,
         view_mode: view_mode,
@@ -594,8 +603,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
         _ -> :single
       end
 
-    # `:scope_folder` is validated and encoded by core. A core older than
-    # 2.23.2 ignores the option, and its selector would ignore the param too.
+    # `:scope_folder` is validated and encoded by core.
     selector_url =
       MediaSelectorHelper.media_selector_url(return_to,
         mode: mode_atom,

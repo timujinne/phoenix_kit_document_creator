@@ -200,6 +200,39 @@ if Code.ensure_loaded?(PhoenixKitDocumentCreator.DataCase) do
         assert logo_var["config"]["annotated"] == false
         refute is_map_key(logo_var["config"], :annotated)
       end
+
+      test "persists fit: page for an image_list variable", %{template: t} do
+        assert {:ok, _} =
+                 Documents.update_template_variable_config(
+                   t.google_doc_id,
+                   "photos",
+                   %{"fit" => "page"}
+                 )
+
+        reloaded = Repo.reload(t)
+        photos_var = Enum.find(reloaded.variables, &(&1["name"] == "photos"))
+        assert photos_var["config"]["fit"] == "page"
+      end
+
+      test "an unrecognized fit value is dropped, existing value preserved", %{template: t} do
+        assert {:ok, _} =
+                 Documents.update_template_variable_config(
+                   t.google_doc_id,
+                   "photos",
+                   %{"fit" => "page"}
+                 )
+
+        assert {:ok, _} =
+                 Documents.update_template_variable_config(
+                   t.google_doc_id,
+                   "photos",
+                   %{"fit" => "huge"}
+                 )
+
+        reloaded = Repo.reload(t)
+        photos_var = Enum.find(reloaded.variables, &(&1["name"] == "photos"))
+        assert photos_var["config"]["fit"] == "page"
+      end
     end
   end
 end

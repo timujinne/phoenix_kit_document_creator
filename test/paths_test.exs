@@ -21,6 +21,10 @@ defmodule PhoenixKitDocumentCreator.PathsTest do
       assert Paths.settings() =~ "/admin/settings/document-creator"
     end
 
+    test "admin_settings/0 returns core's Settings landing page" do
+      assert String.ends_with?(Paths.admin_settings(), "/admin/settings")
+    end
+
     test "integrations/0 and new_integration/0 point at core's WEBSITE-wide pages" do
       # Not `/profile/settings/integrations`: that page stores connections under
       # a `{:user, uuid}` owner, which this module never passes, so a person
@@ -60,6 +64,7 @@ defmodule PhoenixKitDocumentCreator.PathsTest do
             Paths.templates(),
             Paths.documents(),
             Paths.settings(),
+            Paths.admin_settings(),
             Paths.integrations(),
             Paths.new_integration()
           ] do

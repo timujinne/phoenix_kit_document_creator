@@ -26,7 +26,7 @@ defmodule PhoenixKitDocumentCreator.Web.PresetFormLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, page_title: gettext("Preset"), mode: :new)}
+    {:ok, assign(socket, mode: :new)}
   end
 
   @impl true
@@ -50,7 +50,12 @@ defmodule PhoenixKitDocumentCreator.Web.PresetFormLive do
   end
 
   defp load(socket, mode, preset, category, url_path) do
-    assign(socket,
+    # Read after `mount/3` (not in it) so it runs after the parent app's
+    # telemetry hook has synced the process-global Gettext locale.
+    locale = Gettext.get_locale(PhoenixKitDocumentCreator.Gettext)
+
+    socket
+    |> assign(
       mode: mode,
       preset: preset,
       category: category,
@@ -58,12 +63,27 @@ defmodule PhoenixKitDocumentCreator.Web.PresetFormLive do
       templates: category_templates(category.uuid),
       sections: editor_sections(preset.sections),
       form: to_form(TemplatePreset.changeset(preset, %{}), as: :preset),
-      page_title: if(mode == :new, do: gettext("New Preset"), else: gettext("Edit Preset")),
       url_path: url_path,
-      # Read after `mount/3` (not in it) so it runs after the parent app's
-      # telemetry hook has synced the process-global Gettext locale.
-      locale: Gettext.get_locale(PhoenixKitDocumentCreator.Gettext)
+      locale: locale
     )
+    |> assign_trail(mode, preset, category, locale)
+  end
+
+  # `Categories / <category>` for a new preset, `/ <preset>` on top for an
+  # edit; both records are text because the list is their only page.
+  defp assign_trail(socket, :new, _preset, category, locale) do
+    Helpers.assign_trail(socket, gettext("New preset"), [
+      Helpers.categories_crumb(),
+      Helpers.record_crumb(category, locale)
+    ])
+  end
+
+  defp assign_trail(socket, :edit, preset, category, locale) do
+    Helpers.assign_trail(socket, gettext("Edit"), [
+      Helpers.categories_crumb(),
+      Helpers.record_crumb(category, locale),
+      %{label: preset.name}
+    ])
   end
 
   defp get_preset!(uuid) do

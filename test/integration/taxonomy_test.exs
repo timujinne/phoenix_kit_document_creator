@@ -2,6 +2,7 @@ if Code.ensure_loaded?(PhoenixKitDocumentCreator.DataCase) do
   defmodule PhoenixKitDocumentCreator.Integration.TaxonomyTest do
     use PhoenixKitDocumentCreator.DataCase, async: true
 
+    alias PhoenixKitDocumentCreator.Documents
     alias PhoenixKitDocumentCreator.Schemas.Document
     alias PhoenixKitDocumentCreator.Schemas.Template
     alias PhoenixKitDocumentCreator.Taxonomy
@@ -576,6 +577,98 @@ if Code.ensure_loaded?(PhoenixKitDocumentCreator.DataCase) do
         assert Repo.get!(Template, multi.uuid).status == "published"
         # The deleted group is cleared from the mirror (no dangling type ref).
         assert Repo.get!(Template, multi.uuid).type_uuid == nil
+      end
+    end
+
+    describe "count_published_templates_by_type/1" do
+      test "counts published templates per group through the memberships" do
+        cat = create_category!()
+        main = create_type!(cat.uuid)
+        annex = create_type!(cat.uuid)
+        empty = create_type!(cat.uuid)
+
+        for _ <- 1..2 do
+          tmpl = create_template!()
+
+          {:ok, _} =
+            Taxonomy.set_template_memberships(tmpl.uuid, [
+              %{category_uuid: cat.uuid, type_uuid: main.uuid}
+            ])
+        end
+
+        tmpl = create_template!()
+
+        {:ok, _} =
+          Taxonomy.set_template_memberships(tmpl.uuid, [
+            %{category_uuid: cat.uuid, type_uuid: annex.uuid}
+          ])
+
+        # In the category but in no group: counts for no type.
+        ungrouped = create_template!()
+        {:ok, _} = Taxonomy.set_template_memberships(ungrouped.uuid, [%{category_uuid: cat.uuid}])
+
+        counts = Taxonomy.count_published_templates_by_type([main.uuid, annex.uuid, empty.uuid])
+
+        assert counts == %{main.uuid => 2, annex.uuid => 1}
+        assert Map.get(counts, empty.uuid, 0) == 0
+      end
+
+      test "does not count trashed, lost or unfiled templates" do
+        cat = create_category!()
+        type = create_type!(cat.uuid)
+
+        for status <- ~w(published trashed lost unfiled) do
+          tmpl = create_template!(%{status: status})
+
+          {:ok, _} =
+            Taxonomy.set_template_memberships(tmpl.uuid, [
+              %{category_uuid: cat.uuid, type_uuid: type.uuid}
+            ])
+        end
+
+        assert Taxonomy.count_published_templates_by_type([type.uuid]) == %{type.uuid => 1}
+      end
+
+      test "a template in two categories counts once in each category's group" do
+        cat_a = create_category!()
+        cat_b = create_category!()
+        type_a = create_type!(cat_a.uuid)
+        type_b = create_type!(cat_b.uuid)
+        multi = create_template!()
+
+        {:ok, _} =
+          Taxonomy.set_template_memberships(multi.uuid, [
+            %{category_uuid: cat_a.uuid, type_uuid: type_a.uuid},
+            %{category_uuid: cat_b.uuid, type_uuid: type_b.uuid}
+          ])
+
+        assert Taxonomy.count_published_templates_by_type([type_a.uuid, type_b.uuid]) ==
+                 %{type_a.uuid => 1, type_b.uuid => 1}
+      end
+
+      test "an empty list asks nothing" do
+        assert Taxonomy.count_published_templates_by_type([]) == %{}
+      end
+
+      test "counts only the memberships filed under the type's current category" do
+        cat = create_category!()
+        other = create_category!()
+        type = create_type!(cat.uuid)
+        tmpl = create_template!()
+
+        {:ok, _} =
+          Taxonomy.set_template_memberships(tmpl.uuid, [
+            %{category_uuid: cat.uuid, type_uuid: type.uuid}
+          ])
+
+        assert Taxonomy.count_published_templates_by_type([type.uuid]) == %{type.uuid => 1}
+
+        # Moving the type leaves the membership under the old category, so the
+        # preset editor of the new one lists nothing — and neither does the count.
+        {:ok, moved} = Taxonomy.update_type(type, %{category_uuid: other.uuid})
+
+        assert Documents.list_templates_for_category(other.uuid) == []
+        assert Taxonomy.count_published_templates_by_type([moved.uuid]) == %{}
       end
     end
 

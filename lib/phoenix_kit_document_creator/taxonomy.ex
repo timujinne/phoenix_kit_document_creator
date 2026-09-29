@@ -66,9 +66,7 @@ defmodule PhoenixKitDocumentCreator.Taxonomy do
   # ---------------------------------------------------------------------------
 
   defp log_activity(attrs) do
-    if Code.ensure_loaded?(PhoenixKit.Activity) do
-      PhoenixKit.Activity.log(Map.put(attrs, :module, @module_key))
-    end
+    PhoenixKit.Activity.log(Map.put(attrs, :module, @module_key))
 
     :ok
   end
@@ -450,6 +448,39 @@ defmodule PhoenixKitDocumentCreator.Taxonomy do
     from(t in Type, where: t.category_uuid == ^category_uuid)
     |> apply_status_filter(opts)
     |> repo().aggregate(:count)
+  end
+
+  @doc """
+  Counts published templates per group, keyed by type uuid.
+
+  Counted through the `phoenix_kit_doc_template_taxonomy` memberships:
+  published templates filed under the type's current category, which is
+  what `PhoenixKitDocumentCreator.Documents.list_templates_for_category/1`
+  returns for that category. So a template filed under several categories
+  counts once in each category's group, and trashed, lost or unfiled
+  templates are not counted. A membership left under the old category when
+  a type moves to another one is not counted: the new category's listing
+  does not return it, and the old category no longer shows the type (its
+  listing still returns the row, which this count deliberately ignores).
+  One query for the whole list; a type with no published template is
+  absent from the map.
+  """
+  @spec count_published_templates_by_type([Ecto.UUID.t()]) ::
+          %{Ecto.UUID.t() => pos_integer()}
+  def count_published_templates_by_type([]), do: %{}
+
+  def count_published_templates_by_type(type_uuids) when is_list(type_uuids) do
+    from(m in TemplateTaxonomy,
+      join: t in Template,
+      on: t.uuid == m.template_uuid,
+      join: ty in Type,
+      on: ty.uuid == m.type_uuid and ty.category_uuid == m.category_uuid,
+      where: m.type_uuid in ^type_uuids and t.status == "published",
+      group_by: m.type_uuid,
+      select: {m.type_uuid, count(m.template_uuid, :distinct)}
+    )
+    |> repo().all()
+    |> Map.new()
   end
 
   @doc "Fetches a type by UUID. Returns `nil` if not found."
@@ -1195,7 +1226,7 @@ defmodule PhoenixKitDocumentCreator.Taxonomy do
   # Reads the most recent trash activity log entry for the given level and uuid
   # and returns the type/template uuids that were cascade-trashed at the time as
   # `%{types: [...], templates: [...]}`. Both lists are empty when no matching
-  # entry is found or the Activity schema isn't loaded.
+  # entry is found.
   defp fetch_cascade_uuids(level, resource_uuid) do
     action =
       case level do
@@ -1203,14 +1234,6 @@ defmodule PhoenixKitDocumentCreator.Taxonomy do
         :type -> "doc_taxonomy.type.trashed"
       end
 
-    if Code.ensure_loaded?(PhoenixKit.Activity.Entry) do
-      fetch_cascade_uuids_from_activity(action, resource_uuid)
-    else
-      %{types: [], templates: []}
-    end
-  end
-
-  defp fetch_cascade_uuids_from_activity(action, resource_uuid) do
     entry =
       from(e in PhoenixKit.Activity.Entry,
         where: e.action == ^action and e.resource_uuid == ^resource_uuid,

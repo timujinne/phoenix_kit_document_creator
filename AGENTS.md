@@ -13,7 +13,7 @@ uses the Drive export endpoint. Templates are organised by a Category → Type
 taxonomy with per-category presets, and documents can be composed from several
 template sections.
 
-- **Depends on:** `phoenix_kit` `~> 2.21 and >= 2.21.3` (Hex) — Module behaviour, Settings,
+- **Depends on:** `phoenix_kit` `>= 2.38.0 and < 3.0.0` (Hex) — Module behaviour, Settings,
   Integrations, Activity, PubSubHelper, `Utils.Routes`, `Utils.Slug`,
   `Utils.Multilang`, `SchemaPrefix`, `Modules.Storage`, `Modules.Languages`,
   core web components. Plus `phoenix_live_view ~> 1.2`, `req ~> 0.5`,
@@ -131,14 +131,16 @@ mix gettext.extract --merge priv/gettext
 - **`enabled?/0` must `rescue` and `catch :exit`.** Module discovery runs early
   in boot, before Settings may be ready, and the test sandbox can exit the pool
   checkout under a caller — both paths must return `false` rather than crash.
-- **Activity logging must not crash the caller.** Every call to
-  `PhoenixKit.Activity.log/1` sits behind a
-  `Code.ensure_loaded?(PhoenixKit.Activity)` guard: the `log_activity/1`
-  helpers in `Documents` and `Taxonomy`, plus the two legacy-migration sites in
-  `GoogleDocsClient` and the top-level module. Route new logging through one of
-  the two helpers rather than adding a fifth guarded call. Mutating functions
-  take `opts` with `:actor_uuid` for attribution; LiveViews thread it via
-  `Web.Helpers.actor_opts/1`.
+- **Activity logging goes through core, which never raises.** Logging runs
+  through the `log_activity/1` helpers in `Documents` and `Taxonomy` (plus the
+  two legacy-migration sites in `GoogleDocsClient` and the top-level module);
+  route new logging through one of the two helpers. Mutating functions take
+  `opts` with `:actor_uuid` for attribution; LiveViews thread it via
+  `Web.Helpers.actor_opts/1` (core's `PhoenixKitWeb.Actor`).
+- **Edit forms open on the viewing language.** The category and type forms
+  pass `open_on: :viewing_language` to `mount_multilang/2` for an edit (a
+  `"uuid"` param) and the main language for a new record, whose required
+  fields live there.
 - **Soft-delete sentinels.** Files use a four-value `status`:
   `"published"` (inside the managed tree, root or any descendant), `"trashed"`
   (deleted via the app or found in Drive's trash), `"lost"` (gone from Drive —
@@ -164,15 +166,21 @@ mix gettext.extract --merge priv/gettext
   `:phoenix_kit_document_creator`: `:docs_client` (Drive/Docs client),
   `:integrations_backend`, `:media_module`. Production defaults are the real
   modules.
+- **Host tunable: `:page_fit_safety_pt`.** A number of points under
+  `:phoenix_kit_document_creator` (default `8.0`), subtracted from every
+  `fit: "page"` image's available height on top of the header/footer and
+  preceding-content estimate. Read through
+  `GoogleDocsClient.page_fit_safety_pt/0`; a non-numeric or negative value
+  falls back to the default.
 - **Host hook: `:attachments_parent_folder`.** A `{Mod, :fun}` under
   `:phoenix_kit_document_creator`, resolved by `Attachments.scope_folder/2`
   when the template image picker opens (never in `mount/3`). It is called as
   `fun(:document_image, actor_uuid, %{template_file_id: id})` or `/2` and
   returns `{:ok, folder_uuid}` or `nil`. Pass the answer to
   `MediaSelectorHelper.media_selector_url/2` as `scope_folder:`. Don't
-  hand-append the param: core validates and encodes it there. It takes effect
-  only on core 2.23.2 or later and applies to uploads, not picked files. A hook
-  that raises, throws or exits must degrade to `nil`.
+  hand-append the param: core validates and encodes it there. It applies to
+  uploads, not picked files. A hook that raises, throws or exits must degrade
+  to `nil`.
 
 ### Landmines
 
@@ -424,10 +432,11 @@ a machine with no `postgres` role, export `PGUSER`; the preflight reports the
 rejected credentials up front instead of letting the pool time out later.
 
 Two conformance tests are load-bearing and should not be relaxed:
-`core_pin_conformance_test.exs` (the `:phoenix_kit` requirement must stay
-`~> 2.21 and >= 2.21.3` — the floor is where core's website-wide Integrations
-page took its current path, and a three-segment `~> 2.21.3` would pin a single
-minor and break consumers, never this repo) and
+`core_pin_conformance_test.exs` (the `:phoenix_kit` requirement keeps the
+compound `>= 2.38.0 and < 3.0.0` form — the floor is the core that carries
+`PhoenixKitWeb.Actor`, `Activity.log/3` and `Storage.ResourceFolders`, and a
+three-segment `~> 2.38.0` would pin a single minor and break consumers, never
+this repo) and
 `schema_prefix_conformance_test.exs` (every table-backed schema must
 `use PhoenixKit.SchemaPrefix`).
 

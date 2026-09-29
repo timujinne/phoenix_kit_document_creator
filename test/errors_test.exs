@@ -128,4 +128,14 @@ defmodule PhoenixKitDocumentCreator.ErrorsTest do
       end
     end
   end
+
+  describe "message/1 — header/footer replay errors" do
+    test ":segment_not_created and :segment_shape_mismatch have their own messages" do
+      assert Errors.message(:segment_not_created) ==
+               "Google Docs did not create the section's header or footer"
+
+      assert Errors.message(:segment_shape_mismatch) ==
+               "A template's header or footer could not be copied into the document"
+    end
+  end
 end

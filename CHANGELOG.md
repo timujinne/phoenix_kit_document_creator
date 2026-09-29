@@ -1,3 +1,96 @@
+## 0.9.13 - 2026-09-28
+
+### Added
+
+- The Categories page shows the number of published templates next to each
+  type of the selected category, counted the way the preset editor lists
+  them (templates filed under the type's current category). The count
+  follows memberships, cascades and single-template trash/restore live.
+  New `Taxonomy.count_published_templates_by_type/1`.
+
+### Fixed
+
+- The Categories page no longer crashes on an unexpected message on the
+  Document Creator PubSub topics.
+
+## 0.9.12 - 2026-09-25
+
+### Changed
+
+- Requires `phoenix_kit` `>= 2.38.0 and < 3.0.0`. The actor, activity
+  logging and the template image scope folder now come from core's shared
+  toolkits (`PhoenixKitWeb.Actor`, `Activity.log/3`,
+  `Storage.ResourceFolders`). An `:attachments_parent_folder` answer that
+  is not a uuid is now dropped.
+- The admin header shows a consistent trail on every Document Creator page:
+  `Document Creator / Templates`, `Document Creator / Categories / <category>
+  / Edit`, and so on. The Documents list is the landing page, and the
+  settings page sits under `Settings`.
+- The category and type edit forms open on the language the page is viewed
+  in. A new record still starts on the main language.
+
+## 0.9.11 - 2026-09-23
+
+### Fixed
+
+- Image grids (`image_list` with `columns >= 2`) are borderless: the table
+  cells no longer show Google Docs' default black border.
+- An image slot name used in several sections of a composed document fills
+  each section with that section's own images. Previously the last section
+  holding the name won, and the other sections' slots rendered empty.
+- A document with more than one image grid gets every grid's images in its
+  own cells. The later grids' images used to be placed at stale positions,
+  which failed the fill.
+
+## 0.9.10 - 2026-09-23
+
+### Added
+
+- `image_list` slots can fill the rest of their page. A new `fit: "page"`
+  config (a "Fit page" / "Fit width" select in the variable form) scales a
+  single-column slot's images to `min(box width, available height)`, and
+  the available height accounts for the section's header, footer, and the
+  content ahead of the slot. The residual margin can be tuned per host with
+  `config :phoenix_kit_document_creator, :page_fit_safety_pt, 8.0`.
+- New `GoogleDocsClient.section_boxes/1`, `header_extent_pt/2`, and
+  `footer_extent_pt/2`: each section's own page box and estimated
+  header/footer heights.
+- A composed document's appended sections keep their template's own header
+  and footer. When the template's differs from what the section would
+  inherit, a fresh header/footer is created for that section and the
+  template's content (text, rules, tables, cell images) is rebuilt in it.
+  Header/footer placeholders are filled from the section that owns the
+  segment.
+
+### Fixed
+
+- Image slots in a composed document are sized against their own section's
+  width, so images in a landscape section no longer get the portrait width.
+- A header/footer table with more than one row no longer fails the whole
+  compose; each cell's style is addressed at its real row and column.
+- A template header/footer the replay can't rebuild faithfully (page
+  numbers, a floating or non-cell image, a drawing) keeps the inherited one
+  instead of getting a lossy copy, with a warning logged. Only external
+  URL links are copied.
+- A zero margin or cell padding, which the Docs API sends without a
+  magnitude, is read as 0pt rather than falling back to the default.
+- Tables and inline images ahead of a `fit: "page"` slot count at their
+  estimated height.
+
+## 0.9.9 - 2026-09-23
+
+### Fixed
+
+- A composed document's appended sections keep their template's own page
+  orientation. A landscape template appended after a portrait one no longer
+  comes out portrait, and a portrait one after a landscape one no longer
+  inherits the flip. `append_template/3` now sends one `updateSectionStyle`
+  with the template's margins and an explicit `flipPageOrientation`, worked
+  out against the target document's page size (new
+  `GoogleDocsClient.section_layout_requests/3`).
+- A `null` document-level `flipPageOrientation` on a template is treated as
+  unset instead of as a flip.
+
 ## 0.9.8 - 2026-09-22
 
 ### Fixed

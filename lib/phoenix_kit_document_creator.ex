@@ -585,37 +585,20 @@ defmodule PhoenixKitDocumentCreator do
     )
   end
 
+  # Core's log never raises: a missing activities table (host hasn't run
+  # core's migration yet) is logged there and returned, so it can't turn a
+  # successful credentials migration into a boot failure.
   defp log_migration_activity(action_atom, metadata) do
-    if Code.ensure_loaded?(PhoenixKit.Activity) do
-      PhoenixKit.Activity.log(%{
-        action: "integration.legacy_migrated",
-        module: module_key(),
-        mode: "auto",
-        resource_type: "integration",
-        metadata:
-          Map.merge(metadata, %{
-            "migration_kind" => Atom.to_string(action_atom),
-            "actor_role" => "system"
-          })
-      })
-    end
+    PhoenixKit.Activity.log(module_key(), "integration.legacy_migrated",
+      mode: "auto",
+      resource_type: "integration",
+      metadata:
+        Map.merge(metadata, %{
+          "migration_kind" => Atom.to_string(action_atom),
+          "actor_role" => "system"
+        })
+    )
 
     :ok
-  rescue
-    e ->
-      # Activity logging failures must NEVER crash the migration
-      # path — the orchestrator already caught any earlier exception
-      # by the time we get here, and we don't want a missing
-      # activities table (host hasn't run core's migration yet) to
-      # turn a successful credentials migration into a boot failure.
-      # But silently returning :ok means an ops team can't tell why
-      # their audit feed is empty. Log the exception type before
-      # swallowing.
-      Logger.warning(fn ->
-        "[DocumentCreator] activity log failed during legacy migration: " <>
-          "kind=#{action_atom}, exception=#{inspect(e.__struct__)}"
-      end)
-
-      :ok
   end
 end

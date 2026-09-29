@@ -7,14 +7,14 @@ defmodule PhoenixKitDocumentCreator.AttachmentsTest do
   defmodule Hook do
     def parent_for(:document_image, actor_uuid, %{template_file_id: template_file_id}) do
       send(self(), {:hook_called, actor_uuid, template_file_id})
-      {:ok, "folder-uuid-1234"}
+      {:ok, "0190d7a4-0000-7000-8000-000000001234"}
     end
   end
 
   defmodule TwoArgHook do
     def parent_for(:document_image, actor_uuid) do
       send(self(), {:two_arg_hook_called, actor_uuid})
-      {:ok, "folder-uuid-two-arg"}
+      {:ok, "0190d7a4-0000-7000-8000-000000000002"}
     end
   end
 
@@ -30,6 +30,10 @@ defmodule PhoenixKitDocumentCreator.AttachmentsTest do
 
   defmodule ThrowingHook do
     def parent_for(:document_image, _actor_uuid, _subject), do: throw(:nope)
+  end
+
+  defmodule NonUuidHook do
+    def parent_for(:document_image, _actor_uuid, _subject), do: {:ok, "folder-uuid-1234"}
   end
 
   defmodule NilHook do
@@ -53,7 +57,7 @@ defmodule PhoenixKitDocumentCreator.AttachmentsTest do
       {Hook, :parent_for}
     )
 
-    assert Attachments.scope_folder("tpl-1", "actor-1") == "folder-uuid-1234"
+    assert Attachments.scope_folder("tpl-1", "actor-1") == "0190d7a4-0000-7000-8000-000000001234"
     assert_received {:hook_called, "actor-1", "tpl-1"}
   end
 
@@ -64,7 +68,7 @@ defmodule PhoenixKitDocumentCreator.AttachmentsTest do
       {TwoArgHook, :parent_for}
     )
 
-    assert Attachments.scope_folder("tpl-1", "actor-1") == "folder-uuid-two-arg"
+    assert Attachments.scope_folder("tpl-1", "actor-1") == "0190d7a4-0000-7000-8000-000000000002"
     assert_received {:two_arg_hook_called, "actor-1"}
   end
 
@@ -98,5 +102,15 @@ defmodule PhoenixKitDocumentCreator.AttachmentsTest do
 
       assert Attachments.scope_folder("tpl-1", "actor-1") == nil
     end
+  end
+
+  test "drops an answer that is not a uuid" do
+    Application.put_env(
+      :phoenix_kit_document_creator,
+      :attachments_parent_folder,
+      {NonUuidHook, :parent_for}
+    )
+
+    assert Attachments.scope_folder("tpl-1", "actor-1") == nil
   end
 end

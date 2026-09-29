@@ -22,6 +22,10 @@ defmodule PhoenixKitDocumentCreator.Paths do
   @spec settings() :: String.t()
   def settings, do: Routes.path("/admin/settings/document-creator")
 
+  @doc "Core's Settings landing page, the section the module settings page sits in."
+  @spec admin_settings() :: String.t()
+  def admin_settings, do: Routes.path("/admin/settings")
+
   @doc """
   The core settings page holding the connections this module reads and writes.
 

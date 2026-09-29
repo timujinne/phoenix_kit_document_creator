@@ -262,68 +262,30 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClientPhaseTest do
   # ---------------------------------------------------------------------------
 
   describe "duplicate slot names across sections" do
-    # Helper that replicates the fill-resolution logic from substitute_all_images/4.
-    # We test this logic in isolation (no Drive API calls) so the test is fast and
-    # deterministic. The algorithm:
-    #   1. Build (name, fill, range) tuples — one per slot per section.
-    #   2. find_image_tag_ranges/2 locates all {{ image/images: name }} tags in the doc.
-    #   3. For each tag, find the first (name, fill, range) tuple whose name matches AND
-    #      whose range contains the tag's start_index.
-    defp resolve_tagged_ranges(all_image_fills, doc, all_slot_names) do
-      GoogleDocsClient.find_image_tag_ranges(doc, all_slot_names)
-      |> Enum.flat_map(&resolve_tag(all_image_fills, &1))
-    end
-
-    defp resolve_tag(all_image_fills, %{name: name, start_index: s} = tag) do
-      case Enum.find(all_image_fills, fn {n, _fill, range} ->
-             n == name and range_contains?(range, s)
-           end) do
-        nil -> []
-        {_name, fill, _range} -> [Map.put(tag, :fill, fill)]
-      end
-    end
-
-    defp range_contains?(nil, _s), do: false
-    defp range_contains?({rs, re}, s), do: s >= rs and s < re
-
-    # Builds a minimal Google Docs API document body with two paragraphs, each
-    # containing one image tag occurrence of `slot_name`.
-    # section_a_start: start of first tag in the doc (e.g. 1)
-    # section_b_start: start of second tag (e.g. 100)
-    defp fake_doc_with_duplicate_image_slot(slot_name) do
-      tag_text = "{{ image: #{slot_name} }}"
-
+    # Builds a minimal Google Docs API document body with one paragraph per
+    # `start_index`, each containing one image tag occurrence of `slot_name`
+    # — the real shape: an image-grid template and its orientation twin both
+    # render `{{ image: joonised }}` once per section they appear in.
+    defp fake_doc_with_duplicate_image_slot(slot_name, start_indices) do
       %{
         "body" => %{
-          "content" => [
-            %{
-              "paragraph" => %{
-                "elements" => [
-                  %{
-                    "startIndex" => 1,
-                    "textRun" => %{"content" => tag_text}
-                  }
-                ]
+          "content" =>
+            Enum.map(start_indices, fn s ->
+              %{
+                "paragraph" => %{
+                  "elements" => [
+                    %{"startIndex" => s, "textRun" => %{"content" => "{{ image: #{slot_name} }}"}}
+                  ]
+                }
               }
-            },
-            %{
-              "paragraph" => %{
-                "elements" => [
-                  %{
-                    "startIndex" => 100,
-                    "textRun" => %{"content" => tag_text}
-                  }
-                ]
-              }
-            }
-          ]
+            end)
         }
       }
     end
 
     test "both section fills are resolved correctly when slot name is shared" do
       slot_name = "sub_order_photos"
-      doc = fake_doc_with_duplicate_image_slot(slot_name)
+      doc = fake_doc_with_duplicate_image_slot(slot_name, [1, 100])
 
       fill_a = %{
         kind: :image,
@@ -345,14 +307,16 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClientPhaseTest do
         media: [%{uri: "section-b-image.jpg", width_px: 1200, height_px: 900}]
       }
 
-      # Section A occupies doc range [0, 50); section B occupies [50, 200).
-      # The first tag at index 1 belongs to section A; the second at index 100 to B.
+      # Section 0 occupies doc range [0, 50); section 1 occupies [50, 200).
+      # The first tag at index 1 belongs to section 0; the second at index 100 to 1.
       all_image_fills = [
-        {slot_name, fill_a, {0, 50}},
-        {slot_name, fill_b, {50, 200}}
+        {{0, slot_name}, fill_a, {0, 50}},
+        {{1, slot_name}, fill_b, {50, 200}}
       ]
 
-      tagged = resolve_tagged_ranges(all_image_fills, doc, [slot_name])
+      tagged =
+        GoogleDocsClient.find_image_tag_ranges(doc, [slot_name])
+        |> GoogleDocsClient.resolve_image_ranges(all_image_fills)
 
       assert length(tagged) == 2,
              "expected both image slots to be resolved, got #{length(tagged)}"
@@ -360,52 +324,326 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClientPhaseTest do
       [tag_a, tag_b] = Enum.sort_by(tagged, & &1.start_index)
 
       assert tag_a.start_index == 1
-
-      assert tag_a.fill == fill_a,
-             "section A tag should get fill_a (section-a-image.jpg), got #{inspect(tag_a.fill)}"
+      assert tag_a.key == {0, slot_name}
 
       assert tag_b.start_index == 100
-
-      assert tag_b.fill == fill_b,
-             "section B tag should get fill_b (section-b-image.jpg), got #{inspect(tag_b.fill)}"
+      assert tag_b.key == {1, slot_name}
     end
 
-    test "old collision behaviour: Map.new/2 with duplicate keys loses section A fill" do
-      # This documents the old broken behaviour to ensure we do NOT regress.
+    test "keying fills_map by {position, name} (not name alone) keeps both sections' fills" do
       slot_name = "slot"
 
       fill_a = %{kind: :image, media: [%{uri: "a.jpg"}]}
       fill_b = %{kind: :image, media: [%{uri: "b.jpg"}]}
 
-      # With the old Map.new approach, section B's fill overwrites section A's:
       all_image_fills = [
-        {slot_name, fill_a, {0, 50}},
-        {slot_name, fill_b, {50, 200}}
+        {{0, slot_name}, fill_a, {0, 50}},
+        {{1, slot_name}, fill_b, {50, 200}}
       ]
 
-      old_fills_map = Map.new(all_image_fills, fn {name, fill, _} -> {name, fill} end)
-      old_range_by_name = Map.new(all_image_fills, fn {name, _, range} -> {name, range} end)
+      # The old Map.new(all_image_fills, fn {name, fill, _} -> {name, fill} end)
+      # keyed by name alone: section 1's fill would overwrite section 0's.
+      # Keyed by {position, name}, both survive.
+      fills_map = Map.new(all_image_fills, fn {key, fill, _} -> {key, fill} end)
+      assert fills_map[{0, slot_name}] == fill_a
+      assert fills_map[{1, slot_name}] == fill_b
 
-      # Old fills_map: only section B's fill survives (last-write wins).
-      assert old_fills_map[slot_name] == fill_b,
-             "old Map.new collides: fill_a is lost, only fill_b survives"
+      doc = fake_doc_with_duplicate_image_slot(slot_name, [1, 100])
 
-      # Old range_by_name: only section B's range survives.
-      assert old_range_by_name[slot_name] == {50, 200},
-             "old Map.new collides: section A range is lost"
-
-      # New approach correctly assigns both:
-      doc = fake_doc_with_duplicate_image_slot(slot_name)
-      tagged = resolve_tagged_ranges(all_image_fills, doc, [slot_name])
+      tagged =
+        GoogleDocsClient.find_image_tag_ranges(doc, [slot_name])
+        |> GoogleDocsClient.resolve_image_ranges(all_image_fills)
 
       assert length(tagged) == 2
 
       uris =
         tagged
         |> Enum.sort_by(& &1.start_index)
-        |> Enum.map(&(&1.fill.media |> hd() |> Map.get(:uri)))
+        |> Enum.map(&(fills_map[&1.key].media |> hd() |> Map.get(:uri)))
 
       assert uris == ["a.jpg", "b.jpg"]
+    end
+
+    test "three sections sharing a slot name each resolve to their own key, in order, no loss" do
+      slot_name = "joonised"
+      doc = fake_doc_with_duplicate_image_slot(slot_name, [1, 100, 250])
+
+      all_image_fills = [
+        {{0, slot_name}, %{kind: :image_list, media: [%{uri: "p0"}]}, {0, 50}},
+        {{1, slot_name}, %{kind: :image_list, media: [%{uri: "p1"}]}, {50, 200}},
+        {{2, slot_name}, %{kind: :image_list, media: [%{uri: "p2"}]}, {200, 300}}
+      ]
+
+      tagged =
+        GoogleDocsClient.find_image_tag_ranges(doc, [slot_name])
+        |> GoogleDocsClient.resolve_image_ranges(all_image_fills)
+        |> Enum.sort_by(& &1.start_index)
+
+      assert Enum.map(tagged, & &1.key) == [
+               {0, slot_name},
+               {1, slot_name},
+               {2, slot_name}
+             ]
+    end
+
+    test "a mutation back to keying by name alone would collide (regression guard)" do
+      # Direct check on the vulnerable step: Map.new/2 keyed by plain `name`
+      # is exactly the old bug. Confirming it collides here pins down why
+      # resolve_image_ranges/2's {position, name} key is required.
+      slot_name = "slot"
+
+      all_image_fills = [
+        {{0, slot_name}, %{uri: "a"}, {0, 50}},
+        {{1, slot_name}, %{uri: "b"}, {50, 200}}
+      ]
+
+      name_keyed = Map.new(all_image_fills, fn {{_pos, name}, fill, _range} -> {name, fill} end)
+
+      assert map_size(name_keyed) == 1,
+             "keying by name alone collides both sections into one entry"
+
+      key_keyed = Map.new(all_image_fills, fn {key, fill, _range} -> {key, fill} end)
+      assert map_size(key_keyed) == 2
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # grid_border_requests/1 + build_phase2_requests/5 — borderless image grids
+  # ---------------------------------------------------------------------------
+
+  describe "grid_border_requests/1" do
+    test "spans the whole table with the table's own row/column count" do
+      table_el = %{
+        "startIndex" => 42,
+        "table" => %{"rows" => 2, "columns" => 3, "tableRows" => []}
+      }
+
+      [req] = GoogleDocsClient.grid_border_requests(table_el)
+
+      range = get_in(req, ["updateTableCellStyle", "tableRange"])
+      assert range["rowSpan"] == 2
+      assert range["columnSpan"] == 3
+
+      location = get_in(range, ["tableCellLocation"])
+      assert get_in(location, ["tableStartLocation", "index"]) == 42
+      assert location["rowIndex"] == 0
+      assert location["columnIndex"] == 0
+    end
+
+    test "zeroes all four borders and touches nothing else (padding untouched)" do
+      table_el = %{
+        "startIndex" => 1,
+        "table" => %{"rows" => 1, "columns" => 2, "tableRows" => []}
+      }
+
+      [req] = GoogleDocsClient.grid_border_requests(table_el)
+
+      style = get_in(req, ["updateTableCellStyle", "tableCellStyle"])
+
+      for side <- ~w(borderTop borderBottom borderLeft borderRight) do
+        assert get_in(style, [side, "width", "magnitude"]) == 0
+      end
+
+      refute Map.has_key?(style, "paddingTop")
+
+      assert get_in(req, ["updateTableCellStyle", "fields"]) ==
+               "borderTop,borderBottom,borderLeft,borderRight"
+    end
+
+    test "a table block missing startIndex (proto3 omission) defaults to 0" do
+      table_el = %{"table" => %{"rows" => 1, "columns" => 2, "tableRows" => []}}
+      [req] = GoogleDocsClient.grid_border_requests(table_el)
+
+      assert get_in(req, [
+               "updateTableCellStyle",
+               "tableRange",
+               "tableCellLocation",
+               "tableStartLocation",
+               "index"
+             ]) == 0
+    end
+  end
+
+  describe "build_phase2_requests/5" do
+    # A grid table with `rows * columns` cells, laid out left-to-right,
+    # top-to-bottom, each cell's startIndex spaced out like a real Docs
+    # table.
+    defp grid_table_el(start_index, rows, columns) do
+      cell_starts =
+        for r <- 0..(rows - 1), c <- 0..(columns - 1) do
+          start_index + 10 + (r * columns + c) * 20
+        end
+
+      table_rows =
+        cell_starts
+        |> Enum.chunk_every(columns)
+        |> Enum.map(fn row_starts ->
+          %{"tableCells" => Enum.map(row_starts, &%{"startIndex" => &1, "content" => []})}
+        end)
+
+      %{
+        "startIndex" => start_index,
+        "table" => %{"rows" => rows, "columns" => columns, "tableRows" => table_rows}
+      }
+    end
+
+    test "one grid table: its border request precedes every image insert" do
+      slot = %{key: {0, "grid"}, name: "grid", start_index: 50, end_index: 70}
+      table_el = grid_table_el(110, 2, 2)
+      fill = %{kind: :image_list, columns: 2, media: [%{uri: "a"}, %{uri: "b"}, %{uri: "c"}]}
+
+      requests =
+        GoogleDocsClient.build_phase2_requests(
+          [slot],
+          [table_el],
+          %{{0, "grid"} => fill},
+          %{},
+          []
+        )
+
+      kinds = Enum.map(requests, fn r -> r |> Map.keys() |> hd() end)
+
+      assert kinds == [
+               "updateTableCellStyle",
+               "insertInlineImage",
+               "insertInlineImage",
+               "insertInlineImage"
+             ]
+
+      range = get_in(hd(requests), ["updateTableCellStyle", "tableRange"])
+      assert range["rowSpan"] == 2
+      assert range["columnSpan"] == 2
+    end
+
+    test "two grid tables: each keeps its own tableStartLocation, both borders precede every insert" do
+      slot_a = %{key: {0, "a"}, name: "a", start_index: 50, end_index: 70}
+      slot_b = %{key: {1, "b"}, name: "b", start_index: 200, end_index: 220}
+      table_a = grid_table_el(110, 1, 2)
+      table_b = grid_table_el(260, 1, 2)
+
+      fills = %{
+        {0, "a"} => %{kind: :image_list, columns: 2, media: [%{uri: "a1"}, %{uri: "a2"}]},
+        {1, "b"} => %{kind: :image_list, columns: 2, media: [%{uri: "b1"}, %{uri: "b2"}]}
+      }
+
+      requests =
+        GoogleDocsClient.build_phase2_requests(
+          [slot_a, slot_b],
+          [table_a, table_b],
+          fills,
+          %{},
+          []
+        )
+
+      border_reqs = Enum.filter(requests, &Map.has_key?(&1, "updateTableCellStyle"))
+      assert length(border_reqs) == 2
+
+      starts =
+        Enum.map(border_reqs, fn r ->
+          get_in(r, [
+            "updateTableCellStyle",
+            "tableRange",
+            "tableCellLocation",
+            "tableStartLocation",
+            "index"
+          ])
+        end)
+
+      assert Enum.sort(starts) == [110, 260]
+
+      border_positions =
+        for {r, i} <- Enum.with_index(requests), Map.has_key?(r, "updateTableCellStyle"), do: i
+
+      insert_positions =
+        for {r, i} <- Enum.with_index(requests), Map.has_key?(r, "insertInlineImage"), do: i
+
+      assert Enum.max(border_positions) < Enum.min(insert_positions),
+             "every border request must precede every image insert"
+    end
+
+    test "two grid tables: image inserts run in strictly descending index order across tables" do
+      # Inserts are applied in batch order; filling the earlier table first
+      # would shift every later table's cell indices by the images already
+      # inserted, so the later table's inserts would miss their cells.
+      slot_a = %{key: {0, "a"}, name: "a", start_index: 50, end_index: 70}
+      slot_b = %{key: {1, "b"}, name: "b", start_index: 200, end_index: 220}
+
+      fills = %{
+        {0, "a"} => %{kind: :image_list, columns: 2, media: [%{uri: "a1"}, %{uri: "a2"}]},
+        {1, "b"} => %{kind: :image_list, columns: 2, media: [%{uri: "b1"}, %{uri: "b2"}]}
+      }
+
+      requests =
+        GoogleDocsClient.build_phase2_requests(
+          [slot_a, slot_b],
+          [grid_table_el(110, 1, 2), grid_table_el(260, 1, 2)],
+          fills,
+          %{},
+          []
+        )
+
+      inserts =
+        for %{"insertInlineImage" => %{"location" => %{"index" => i}, "uri" => u}} <- requests,
+            do: {i, u}
+
+      assert inserts == [{291, "b2"}, {271, "b1"}, {141, "a2"}, {121, "a1"}]
+    end
+
+    test "columns: 1 slot gets no border request (regression)" do
+      slot = %{key: {0, "single_col"}, name: "single_col", start_index: 50, end_index: 70}
+      table_el = grid_table_el(110, 2, 1)
+      fill = %{kind: :image_list, columns: 1, media: [%{uri: "a"}, %{uri: "b"}]}
+
+      requests =
+        GoogleDocsClient.build_phase2_requests(
+          [slot],
+          [table_el],
+          %{{0, "single_col"} => fill},
+          %{},
+          []
+        )
+
+      refute Enum.any?(requests, &Map.has_key?(&1, "updateTableCellStyle"))
+      assert Enum.count(requests, &Map.has_key?(&1, "insertInlineImage")) == 2
+    end
+
+    test "two grid tables sharing the same slot name in different sections keep their own media (regression)" do
+      # Both sections use a slot literally named "joonised" (the real
+      # scenario: an image-grid template and its orientation twin). Keying
+      # fills_map by name alone would resolve BOTH tables to whichever
+      # section's fill happened to be inserted last into the map.
+      slot_a = %{key: {0, "joonised"}, name: "joonised", start_index: 50, end_index: 70}
+      slot_b = %{key: {1, "joonised"}, name: "joonised", start_index: 200, end_index: 220}
+      table_a = grid_table_el(110, 1, 2)
+      table_b = grid_table_el(260, 1, 2)
+
+      fills = %{
+        {0, "joonised"} => %{
+          kind: :image_list,
+          columns: 2,
+          media: [%{uri: "section0-a"}, %{uri: "section0-b"}]
+        },
+        {1, "joonised"} => %{
+          kind: :image_list,
+          columns: 2,
+          media: [%{uri: "section1-a"}, %{uri: "section1-b"}]
+        }
+      }
+
+      requests =
+        GoogleDocsClient.build_phase2_requests(
+          [slot_a, slot_b],
+          [table_a, table_b],
+          fills,
+          %{},
+          []
+        )
+
+      uris = for %{"insertInlineImage" => %{"uri" => u}} <- requests, do: u
+
+      assert Enum.sort(uris) == ["section0-a", "section0-b", "section1-a", "section1-b"]
+      assert Enum.any?(uris, &String.starts_with?(&1, "section0-"))
+      assert Enum.any?(uris, &String.starts_with?(&1, "section1-"))
     end
   end
 end

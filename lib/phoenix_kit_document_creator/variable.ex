@@ -166,7 +166,14 @@ defmodule PhoenixKitDocumentCreator.Variable do
   Returns the default render config for an image variable.
 
   For `:image`: `%{default_width_px: 400, opacity: 1.0, z_index: 0, annotated: true}`
-  For `:image_list`: adds `separator: :newline, max_count: nil, columns: 1`.
+  For `:image_list`: adds `separator: :newline, max_count: nil, columns: 1, fit: "width"`.
+
+  `:fit` — `"width"` (default) sizes the image to the slot's column width,
+  same as always. `"page"` scales it to fill as much of its section's page
+  as fits (width or height, whichever runs out first) — see
+  `PhoenixKitDocumentCreator.GoogleDocsClient.apply_image_fills/3`'s doc for
+  the scope this is limited to (columns = 1, not inside a table cell, one
+  `fit: "page"` slot per section).
 
   `:annotated` — when `true` (default), the host app should flatten drawn
   annotations into the image before inserting it into the document. Set to
@@ -188,6 +195,7 @@ defmodule PhoenixKitDocumentCreator.Variable do
       annotated: true,
       separator: :newline,
       max_count: nil,
-      columns: 1
+      columns: 1,
+      fit: "width"
     }
 end

@@ -15,7 +15,11 @@ defmodule PhoenixKitDocumentCreator.CorePinConformanceTest do
   Core 1.7 is deliberately excluded: core 2.0.0 squashed the migration chain to
   a V135 floor and this module is verified only against that baseline.
 
-  **The floor is 2.21.3** and everything older is rejected on purpose:
+  **The floor is 2.38.0** — the actor and activity log come from
+  `PhoenixKitWeb.Actor` and `Activity.log/3`, the template image scope folder
+  from `Storage.ResourceFolders`, and the edit forms use
+  `mount_multilang(open_on:)`; an older core does not compile the package. The
+  earlier floor, 2.21.3, had two reasons of its own that still hold below it:
 
   - `Template.changeset/2` calls `PhoenixKit.Utils.Slug.put_slug/3`, which
     core did not ship until 2.4.0 — admitting 2.0.x would let a host resolve
@@ -30,17 +34,17 @@ defmodule PhoenixKitDocumentCreator.CorePinConformanceTest do
   Both are the *same class* of consumer-only breakage this test exists to
   catch, just from the opposite direction: too wide rather than too narrow.
 
-  Raising the floor is NOT the trap described above. `~> 2.21 and >= 2.21.3`
-  is a two-segment `~>` with a patch guard, so it still admits every later
-  core minor; the forbidden shape is the three-segment `~> 2.21.3`, which
-  would pin to a single minor and is rejected by the `@must_admit` entries
-  below.
+  Raising the floor is NOT the trap described above. `>= 2.38.0 and < 3.0.0`
+  is patch-precise at the bottom and open at the top, so it still admits every
+  later core minor; the forbidden shape is the three-segment `~> 2.38.0`,
+  which would pin to a single minor and is rejected by the `@must_admit`
+  entries below.
   """
 
-  @must_admit ["2.21.3", "2.21.9", "2.22.0", "2.22.16", "2.30.0"]
-  @must_reject ["1.7.236", "2.0.0", "2.4.0", "2.9.4", "2.18.4", "2.21.2", "3.0.0"]
+  @must_admit ["2.38.0", "2.38.1", "2.39.0", "2.99.4"]
+  @must_reject ["1.7.236", "2.0.0", "2.4.0", "2.21.2", "2.21.3", "2.37.3", "2.37.5", "3.0.0"]
 
-  test "the :phoenix_kit requirement admits every core 2.21.3+ and nothing else" do
+  test "the :phoenix_kit requirement admits every core >= 2.38.0 minor and nothing else" do
     requirement = core_requirement()
 
     assert match?({:ok, _parsed}, Version.parse_requirement(requirement)),
@@ -50,7 +54,8 @@ defmodule PhoenixKitDocumentCreator.CorePinConformanceTest do
       assert Version.match?(version, requirement),
              "`:phoenix_kit` requirement #{inspect(requirement)} rejects core #{version}. " <>
                "A pin that excludes a core minor breaks `mix deps.get` for every host " <>
-               "running this module alongside that core. Keep it `~> 2.21 and >= 2.21.3`."
+               "running this module alongside that core. Keep the floor patch-precise and the ceiling open " <>
+               "(`>= 2.38.0 and < 3.0.0`), never a three-segment `~>`."
     end
 
     for version <- @must_reject do

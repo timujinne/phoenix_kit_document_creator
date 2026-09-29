@@ -1,7 +1,7 @@
 defmodule PhoenixKitDocumentCreator.MixProject do
   use Mix.Project
 
-  @version "0.9.8"
+  @version "0.9.13"
   @source_url "https://github.com/BeamLabEU/phoenix_kit_document_creator"
 
   def project do
@@ -88,7 +88,7 @@ defmodule PhoenixKitDocumentCreator.MixProject do
     [
       # PhoenixKit provides the Module behaviour and Settings API — and, since
       # the `put_slug/3` adoption, the slug changeset glue as well.
-      # 2.21.3+ is REQUIRED, not preferred. Two facts set the floor:
+      # The floor is REQUIRED, not preferred. Three facts set it:
       #   - `Template.changeset/2` calls `PhoenixKit.Utils.Slug.put_slug/3`,
       #     which does not exist before core 2.4.0.
       #   - `Paths.integrations/0` links to `/admin/settings/integrations` as
@@ -97,9 +97,15 @@ defmodule PhoenixKitDocumentCreator.MixProject do
       #     `/website` segment, and only 2.21.3 renamed it to the bare path.
       # Under a looser floor a host resolves a core where the link lands on the
       # wrong page — in the consumer's app, never in this repo's own run,
-      # because the workspace always resolves the newest core. Two-segment
-      # `~> 2.21` plus a patch guard, so every later 2.x still satisfies it.
-      pk_dep(:phoenix_kit, "~> 2.21 and >= 2.21.3"),
+      # because the workspace always resolves the newest core.
+      #   - 2.38.0 is the floor now: the actor and activity log come from
+      #     `PhoenixKitWeb.Actor` and `Activity.log/3`, the template image
+      #     scope folder from `Storage.ResourceFolders`, and the edit forms use
+      #     `mount_multilang(open_on:)` — none feature-detected, so an older
+      #     core fails to compile the package.
+      # Patch-precise floor in the compound form, so every later 2.x minor
+      # still satisfies it (see test/core_pin_conformance_test.exs).
+      pk_dep(:phoenix_kit, ">= 2.38.0 and < 3.0.0"),
 
       # mdex_native (pulled in transitively through phoenix_kit's mdex dep)
       # builds from source when MDEX_NATIVE_BUILD=1 is set in the

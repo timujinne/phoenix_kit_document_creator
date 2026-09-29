@@ -69,6 +69,33 @@ defmodule PhoenixKitDocumentCreator.Web.Components.VariableConfigFormTest do
       assert html =~ "max_count"
       assert html =~ "5"
     end
+
+    test "renders fit select defaulting to width" do
+      html =
+        render_component(&VariableConfigForm.config_form/1,
+          variable: %{
+            name: "photos",
+            type: :image_list,
+            config: %{default_width_px: 400, separator: :newline, max_count: nil}
+          }
+        )
+
+      assert html =~ "config][fit]"
+      assert html =~ ~r/<option value="width" selected[^>]*>/
+    end
+
+    test "renders fit select with page selected when config has fit: \"page\"" do
+      html =
+        render_component(&VariableConfigForm.config_form/1,
+          variable: %{
+            name: "photos",
+            type: :image_list,
+            config: %{default_width_px: 400, separator: :newline, max_count: nil, fit: "page"}
+          }
+        )
+
+      assert html =~ ~r/<option value="page" selected[^>]*>/
+    end
   end
 
   describe "non-image variable" do

@@ -18,14 +18,20 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    if connected?(socket), do: Taxonomy.subscribe()
+    # Taxonomy events move templates between groups; :files_changed is what
+    # trashing and restoring a template send when its status changes — both
+    # move the template counts next to the types.
+    if connected?(socket) do
+      Taxonomy.subscribe()
+      PhoenixKit.PubSubHelper.subscribe(Documents.pubsub_topic())
+    end
 
     {:ok,
      assign(socket,
-       page_title: gettext("Categories"),
        categories: [],
        selected: nil,
        types: [],
+       type_template_counts: %{},
        presets: [],
        categories_status_mode: "active",
        types_status_mode: "active",
@@ -43,6 +49,7 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
       # Read after `mount/3` (not in it) so it runs after the parent app's
       # telemetry hook has synced the process-global Gettext locale.
       |> assign(url_path: url_path, locale: Gettext.get_locale(PhoenixKitDocumentCreator.Gettext))
+      |> Helpers.assign_trail(gettext("Categories"))
       |> reload_categories()
 
     {:noreply, socket}
@@ -282,6 +289,17 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
     {:noreply, reload_categories(socket)}
   end
 
+  def handle_info({:files_changed, _from}, socket) do
+    {:noreply, reload_types(socket)}
+  end
+
+  # The files topic is a public contract other code can broadcast on; a
+  # message this page does not know must not crash it.
+  def handle_info(msg, socket) do
+    Logger.debug("DocumentCreator.CategoriesLive: ignoring unexpected message: #{inspect(msg)}")
+    {:noreply, socket}
+  end
+
   # ── Render ─────────────────────────────────────────────────────────────────
 
   @impl true
@@ -427,7 +445,19 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
                     >
                       <span class="hero-bars-3 w-4 h-4" />
                     </span>
-                    <span class="flex-1 text-sm font-medium">{Taxonomy.localized_name(type, @locale)}</span>
+                    <span class="flex-1 flex items-center gap-2">
+                      <span class="text-sm font-medium">{Taxonomy.localized_name(type, @locale)}</span>
+                      <span
+                        :if={@types_status_mode == "active"}
+                        id={"type-template-count-#{type.uuid}"}
+                        class="badge badge-ghost badge-sm shrink-0"
+                        title={template_count_label(@type_template_counts, type)}
+                        role="img"
+                        aria-label={template_count_label(@type_template_counts, type)}
+                      >
+                        {template_count(@type_template_counts, type)}
+                      </span>
+                    </span>
                     <.type_row_menu type={type} trash_view={@types_status_mode == "trashed"} />
                   </li>
                 <% end %>
@@ -696,7 +726,7 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
     socket =
       case socket.assigns.selected do
         nil ->
-          assign(socket, types: [], trashed_types_count: 0)
+          assign(socket, types: [], type_template_counts: %{}, trashed_types_count: 0)
 
         category ->
           status_mode = socket.assigns.types_status_mode
@@ -708,10 +738,28 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
               do: length(types),
               else: Taxonomy.count_types_for_category(category.uuid, status: "deleted")
 
-          assign(socket, types: types, trashed_types_count: trashed_types_count)
+          # Only the active list shows counts: the trash lists types to
+          # restore or delete, not ones in use.
+          type_template_counts =
+            if status_mode == "trashed",
+              do: %{},
+              else: Taxonomy.count_published_templates_by_type(Enum.map(types, & &1.uuid))
+
+          assign(socket,
+            types: types,
+            type_template_counts: type_template_counts,
+            trashed_types_count: trashed_types_count
+          )
       end
 
     reload_presets(socket)
+  end
+
+  defp template_count(counts, type), do: Map.get(counts, type.uuid, 0)
+
+  defp template_count_label(counts, type) do
+    count = template_count(counts, type)
+    ngettext("%{count} template", "%{count} templates", count, count: count)
   end
 
   defp reload_presets(socket) do

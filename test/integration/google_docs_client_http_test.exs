@@ -756,6 +756,98 @@ defmodule PhoenixKitDocumentCreator.Integration.GoogleDocsClientHttpTest do
 
       assert [%{insertInlineImage: %{uri: "https://example.test/a.png"}}] = image_requests
     end
+
+    test "a section that got its own header (Block C) substitutes it with that section's own values, not the first section's" do
+      # Two REAL sections (an explicit sectionBreak, not the degenerate
+      # `"body" => %{"content" => []}` fixtures above) — section 1's own
+      # sectionBreak carries its own `defaultHeaderId`, simulating
+      # `append_template/3` having given it a replayed copy of its
+      # template's header (see google_docs_client_header_footer_test.exs).
+      # Both headers share the same placeholder key; each must resolve
+      # against the section that OWNS its segment, not against section 0
+      # just because it has the lowest position.
+      doc = %{
+        "documentStyle" => %{"defaultHeaderId" => "kix.home"},
+        "headers" => %{
+          "kix.home" => %{
+            "content" => [
+              %{
+                "paragraph" => %{
+                  "elements" => [
+                    %{"startIndex" => 1, "textRun" => %{"content" => "{{ title }}\n"}}
+                  ]
+                }
+              }
+            ]
+          },
+          "kix.own" => %{
+            "content" => [
+              %{
+                "paragraph" => %{
+                  "elements" => [
+                    %{"startIndex" => 1, "textRun" => %{"content" => "{{ title }}\n"}}
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "body" => %{
+          "content" => [
+            %{"sectionBreak" => %{"sectionStyle" => %{}}},
+            %{
+              "paragraph" => %{
+                "elements" => [
+                  %{"startIndex" => 1, "endIndex" => 5, "textRun" => %{"content" => "Sec0\n"}}
+                ]
+              }
+            },
+            %{
+              "startIndex" => 5,
+              "sectionBreak" => %{"sectionStyle" => %{"defaultHeaderId" => "kix.own"}}
+            },
+            %{
+              "paragraph" => %{
+                "elements" => [
+                  %{"startIndex" => 6, "endIndex" => 10, "textRun" => %{"content" => "Sec1\n"}}
+                ]
+              }
+            }
+          ]
+        }
+      }
+
+      StubIntegrations.stub_request(
+        :get,
+        "/v1/documents/doc-mixed-headers",
+        {:ok, %{status: 200, body: doc}}
+      )
+
+      StubIntegrations.stub_request(
+        :post,
+        ":batchUpdate",
+        {:ok, %{status: 200, body: %{"replies" => []}}}
+      )
+
+      sections = [
+        %{position: 0, variable_values: %{"title" => "Home title"}, image_params: %{}},
+        %{position: 1, variable_values: %{"title" => "Section 1 title"}, image_params: %{}}
+      ]
+
+      ranges = %{0 => {1, 5}, 1 => {6, 10}}
+
+      assert :ok = GoogleDocsClient.substitute_all_sections("doc-mixed-headers", sections, ranges)
+
+      text_by_segment =
+        for {:post, url, opts} <- StubIntegrations.recorded_requests(),
+            String.contains?(url, ":batchUpdate"),
+            request <- opts[:json].requests,
+            %{insertText: %{location: %{segmentId: segment_id}, text: text}} <- [request],
+            into: %{},
+            do: {segment_id, text}
+
+      assert text_by_segment == %{"kix.home" => "Home title", "kix.own" => "Section 1 title"}
+    end
   end
 
   describe "shift_ranges/2" do

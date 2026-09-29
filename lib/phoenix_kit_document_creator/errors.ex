@@ -54,6 +54,8 @@ defmodule PhoenixKitDocumentCreator.Errors do
           | :no_thumbnail
           | :not_found
           | :pdf_export_failed
+          | :segment_not_created
+          | :segment_shape_mismatch
           | :sync_failed
           | :templates_folder_not_found
           | :thumbnail_fetch_failed
@@ -124,6 +126,12 @@ defmodule PhoenixKitDocumentCreator.Errors do
 
   def message(:image_insert_failed), do: gettext("Failed to insert images into document")
   def message(:image_tag_not_found), do: gettext("Image placeholder tag not found in template")
+
+  def message(:segment_not_created),
+    do: gettext("Google Docs did not create the section's header or footer")
+
+  def message(:segment_shape_mismatch),
+    do: gettext("A template's header or footer could not be copied into the document")
 
   def message({:error, reason}), do: message(reason)
 

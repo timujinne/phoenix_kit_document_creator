@@ -109,6 +109,7 @@ defmodule PhoenixKitDocumentCreator.VariableTest do
       assert cfg.separator == :newline
       assert cfg.max_count == nil
       assert cfg.annotated == true
+      assert cfg.fit == "width"
     end
   end
 
