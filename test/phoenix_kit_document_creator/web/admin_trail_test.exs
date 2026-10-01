@@ -42,6 +42,9 @@ defmodule PhoenixKitDocumentCreator.Web.AdminTrailTest do
   @section {"Document Creator", "/en/admin/document-creator"}
   @categories {"Categories", "/en/admin/document-creator/categories"}
 
+  # The category crumb opens the Categories list with that category selected.
+  defp legal(cat), do: {"Legal", "/en/admin/document-creator/categories?category=#{cat.uuid}"}
+
   describe "lists" do
     test "the Documents list is the landing page: the module is the title, no section",
          %{conn: conn} do
@@ -74,29 +77,29 @@ defmodule PhoenixKitDocumentCreator.Web.AdminTrailTest do
                {section, section_path, [@categories], "New category"}
 
       assert trail(mount(conn, "/en/admin/document-creator/categories/#{cat.uuid}/edit")) ==
-               {section, section_path, [@categories, {"Legal", nil}], "Edit"}
+               {section, section_path, [@categories, legal(cat)], "Edit"}
     end
 
-    test "type: the category is a text crumb, the type on top for an edit",
+    test "type: the category links to its selection, the type on top for an edit",
          %{conn: conn, cat: cat, type: type} do
       {section, section_path} = @section
 
       assert trail(mount(conn, "/en/admin/document-creator/categories/#{cat.uuid}/types/new")) ==
-               {section, section_path, [@categories, {"Legal", nil}], "New type"}
+               {section, section_path, [@categories, legal(cat)], "New type"}
 
       assert trail(mount(conn, "/en/admin/document-creator/types/#{type.uuid}/edit")) ==
-               {section, section_path, [@categories, {"Legal", nil}, {"Contract", nil}], "Edit"}
+               {section, section_path, [@categories, legal(cat), {"Contract", nil}], "Edit"}
     end
 
-    test "preset: the category is a text crumb, the preset on top for an edit",
+    test "preset: the category links to its selection, the preset on top for an edit",
          %{conn: conn, cat: cat, preset: preset} do
       {section, section_path} = @section
 
       assert trail(mount(conn, "/en/admin/document-creator/categories/#{cat.uuid}/presets/new")) ==
-               {section, section_path, [@categories, {"Legal", nil}], "New preset"}
+               {section, section_path, [@categories, legal(cat)], "New preset"}
 
       assert trail(mount(conn, "/en/admin/document-creator/presets/#{preset.uuid}/edit")) ==
-               {section, section_path, [@categories, {"Legal", nil}, {"Standard bundle", nil}],
+               {section, section_path, [@categories, legal(cat), {"Standard bundle", nil}],
                 "Edit"}
     end
   end

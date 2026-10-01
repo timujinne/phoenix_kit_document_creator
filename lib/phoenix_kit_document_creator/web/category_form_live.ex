@@ -14,7 +14,7 @@ defmodule PhoenixKitDocumentCreator.Web.CategoryFormLive do
 
   require Logger
 
-  alias PhoenixKit.Utils.Routes
+  alias PhoenixKitDocumentCreator.Paths
   alias PhoenixKitDocumentCreator.Schemas.Category
   alias PhoenixKitDocumentCreator.Taxonomy
   alias PhoenixKitDocumentCreator.Web.Helpers
@@ -62,7 +62,7 @@ defmodule PhoenixKitDocumentCreator.Web.CategoryFormLive do
           )
           |> Helpers.assign_trail(gettext("Edit"), [
             Helpers.categories_crumb(),
-            Helpers.record_crumb(category, locale)
+            Helpers.category_crumb(category, locale)
           ])
 
         _ ->
@@ -113,11 +113,11 @@ defmodule PhoenixKitDocumentCreator.Web.CategoryFormLive do
       end
 
     case result do
-      {:ok, _} ->
+      {:ok, category} ->
         {:noreply,
          socket
          |> put_flash(:info, gettext("Category saved."))
-         |> push_navigate(to: Routes.path("/admin/document-creator/categories"))}
+         |> push_navigate(to: Paths.category(category.uuid))}
 
       {:error, changeset} ->
         {:noreply, assign(socket, changeset: changeset, form: to_form(changeset, as: :category))}
@@ -132,7 +132,7 @@ defmodule PhoenixKitDocumentCreator.Web.CategoryFormLive do
         {:noreply,
          socket
          |> put_flash(:info, gettext("Category permanently deleted."))
-         |> push_navigate(to: Routes.path("/admin/document-creator/categories"))}
+         |> push_navigate(to: Paths.categories())}
 
       {:error, reason} ->
         Logger.error("permanently_delete_category failed: #{inspect(reason)}")
@@ -145,7 +145,7 @@ defmodule PhoenixKitDocumentCreator.Web.CategoryFormLive do
     ~H"""
     <div class="flex flex-col mx-auto max-w-xl px-4 py-6 gap-6">
       <div class="flex items-center gap-3">
-        <a href={Routes.path("/admin/document-creator/categories")} class="btn btn-ghost btn-sm">
+        <a href={Paths.category(@category.uuid)} class="btn btn-ghost btn-sm">
           <span class="hero-arrow-left w-4 h-4" />
         </a>
         <h1 class="text-2xl font-bold">
@@ -197,7 +197,7 @@ defmodule PhoenixKitDocumentCreator.Web.CategoryFormLive do
             </.multilang_fields_wrapper>
 
             <div class="flex gap-2 justify-end">
-              <a href={Routes.path("/admin/document-creator/categories")} class="btn btn-ghost btn-sm">
+              <a href={Paths.category(@category.uuid)} class="btn btn-ghost btn-sm">
                 {gettext("Cancel")}
               </a>
               <button

@@ -29,6 +29,20 @@ defmodule PhoenixKitDocumentCreator.Web.PresetFormLiveTest do
       assert preset.scope_id == cat.uuid
     end
 
+    test "Cancel and the save go back to the category, selected", %{conn: conn, cat: cat} do
+      conn = put_test_scope(conn, fake_scope())
+      back = "/en/admin/document-creator/categories?category=#{cat.uuid}"
+
+      {:ok, view, _} =
+        live(conn, "/en/admin/document-creator/categories/#{cat.uuid}/presets/new")
+
+      assert has_element?(view, ~s{a[href="#{back}"]}, "Cancel")
+
+      view |> form("form", preset: %{name: "Standard"}) |> render_submit()
+
+      assert_redirect(view, back)
+    end
+
     # `live/2` runs the LiveView in its own process, so it never sees a
     # non-default Gettext locale in a test (see the identical caveat on
     # `CategoriesLiveTest`'s "locale-aware category/type names" describe

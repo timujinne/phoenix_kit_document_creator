@@ -1,3 +1,13 @@
+## 0.9.14 - 2026-09-29
+
+### Changed
+
+- The Categories page keeps the selected category in its URL
+  (`?category=<uuid>`, `Paths.category/1`). The category, type and preset
+  forms now send the admin back to the category they came from with its
+  types open, their breadcrumbs link to it, and a reload or Back keeps the
+  selection. An unknown or malformed uuid selects nothing.
+
 ## 0.9.13 - 2026-09-28
 
 ### Added

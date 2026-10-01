@@ -23,6 +23,134 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLiveTest do
     assert render(view) =~ "InvoiceType"
   end
 
+  describe "the selected category is in the URL" do
+    @page "/en/admin/document-creator/categories"
+
+    setup %{conn: conn} do
+      {:ok, cat} = Taxonomy.create_category(%{name: "Legal"})
+      {:ok, _} = Taxonomy.create_type(%{name: "Contract", category_uuid: cat.uuid})
+      %{conn: put_test_scope(conn, fake_scope()), cat: cat}
+    end
+
+    test "clicking a category patches it into the URL", %{conn: conn, cat: cat} do
+      {:ok, view, _html} = live(conn, @page)
+
+      view
+      |> element("button[phx-click='select_category'][phx-value-uuid='#{cat.uuid}']")
+      |> render_click()
+
+      assert_patch(view, @page <> "?category=#{cat.uuid}")
+      assert render(view) =~ "Contract"
+    end
+
+    test "opening the URL opens the category with its types", %{conn: conn, cat: cat} do
+      {:ok, view, _html} = live(conn, @page <> "?category=#{cat.uuid}")
+
+      assert has_element?(view, "h2", "Legal")
+      assert render(view) =~ "Contract"
+    end
+
+    test "a category that is not in the list selects nothing", %{conn: conn} do
+      for uuid <- [Ecto.UUID.generate(), "not-a-uuid"] do
+        {:ok, view, html} = live(conn, @page <> "?category=#{uuid}")
+
+        assert html =~ "Select a category to see its types."
+        refute render(view) =~ "Contract"
+      end
+    end
+
+    test "trashing, the category Trash tab and deleting forever drop it from the URL",
+         %{conn: conn, cat: cat} do
+      {:ok, view, _html} = live(conn, @page <> "?category=#{cat.uuid}")
+
+      view
+      |> element("button[phx-click='trash_category'][phx-value-uuid='#{cat.uuid}']")
+      |> render_click()
+
+      assert_patch(view, @page)
+      assert render(view) =~ "Select a category to see its types."
+      # The flash put before the patch is still shown after it.
+      assert has_element?(view, "#flash-info", "Category trashed.")
+
+      # Switching to the Trash tab drops a selection (the trashed `cat`
+      # keeps the tab on the page).
+      {:ok, other} = Taxonomy.create_category(%{name: "Other"})
+      {:ok, view, _html} = live(conn, @page <> "?category=#{other.uuid}")
+
+      view
+      |> element(
+        "button[phx-click='switch_status'][phx-value-target='categories'][phx-value-mode='trashed']"
+      )
+      |> render_click()
+
+      assert_patch(view, @page)
+      assert render(view) =~ "Select a category to see its types."
+
+      # In the Trash tab: selecting `cat` patches it in, deleting it forever
+      # patches it out, the flash survives.
+      view
+      |> element("button[phx-click='select_category'][phx-value-uuid='#{cat.uuid}']")
+      |> render_click()
+
+      assert_patch(view, @page <> "?category=#{cat.uuid}")
+
+      view
+      |> element("button[phx-click='delete_category_forever'][phx-value-uuid='#{cat.uuid}']")
+      |> render_click()
+
+      assert_patch(view, @page)
+      assert has_element?(view, "#flash-info", "Category permanently deleted.")
+      assert Taxonomy.get_category(cat.uuid) == nil
+    end
+
+    test "clicking the selected category again goes back to its active types",
+         %{conn: conn, cat: cat} do
+      {:ok, type} = Taxonomy.create_type(%{name: "Gone", category_uuid: cat.uuid})
+      {:ok, _} = Taxonomy.trash_type(type)
+      {:ok, view, _html} = live(conn, @page <> "?category=#{cat.uuid}")
+
+      view
+      |> element(
+        "button[phx-click='switch_status'][phx-value-target='types'][phx-value-mode='trashed']"
+      )
+      |> render_click()
+
+      assert render(view) =~ "Gone"
+
+      # Same URL, but the click still leaves the types' Trash tab, as before.
+      view
+      |> element("button[phx-click='select_category'][phx-value-uuid='#{cat.uuid}']")
+      |> render_click()
+
+      refute render(view) =~ "Gone"
+      assert render(view) =~ "Contract"
+    end
+
+    test "another category opens on its active types", %{conn: conn, cat: cat} do
+      {:ok, type} = Taxonomy.create_type(%{name: "Gone", category_uuid: cat.uuid})
+      {:ok, _} = Taxonomy.trash_type(type)
+      {:ok, other} = Taxonomy.create_category(%{name: "Other"})
+      {:ok, other_type} = Taxonomy.create_type(%{name: "OtherGone", category_uuid: other.uuid})
+      {:ok, _} = Taxonomy.trash_type(other_type)
+      {:ok, view, _html} = live(conn, @page <> "?category=#{cat.uuid}")
+
+      view
+      |> element(
+        "button[phx-click='switch_status'][phx-value-target='types'][phx-value-mode='trashed']"
+      )
+      |> render_click()
+
+      assert render(view) =~ "Gone"
+
+      # Through the URL alone (a link, Back/Forward) — not the click, which
+      # resets the tab by itself.
+      render_patch(view, @page <> "?category=#{other.uuid}")
+
+      refute render(view) =~ "OtherGone"
+      assert has_element?(view, "h2", "Other")
+    end
+  end
+
   describe "locale-aware category/type names" do
     # `live/2` runs the LiveView in its own process, so `Gettext.put_locale/2`
     # called from the test process never reaches it — DC has no locale-sync

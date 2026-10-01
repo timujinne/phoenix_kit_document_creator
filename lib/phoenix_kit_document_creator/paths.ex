@@ -19,6 +19,15 @@ defmodule PhoenixKitDocumentCreator.Paths do
   @spec categories() :: String.t()
   def categories, do: Routes.path("#{@base}/categories")
 
+  @doc """
+  The Categories page with one category selected — its types and presets
+  open, as when the category is clicked in the list. `nil` (a record with
+  no category yet) is the page with none selected.
+  """
+  @spec category(String.t() | nil) :: String.t()
+  def category(nil), do: categories()
+  def category(uuid), do: categories() <> "?" <> URI.encode_query(category: uuid)
+
   @spec settings() :: String.t()
   def settings, do: Routes.path("/admin/settings/document-creator")
 

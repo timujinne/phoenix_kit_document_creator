@@ -16,7 +16,7 @@ defmodule PhoenixKitDocumentCreator.Web.TypeFormLive do
 
   require Logger
 
-  alias PhoenixKit.Utils.Routes
+  alias PhoenixKitDocumentCreator.Paths
   alias PhoenixKitDocumentCreator.Schemas.Type
   alias PhoenixKitDocumentCreator.Taxonomy
   alias PhoenixKitDocumentCreator.Web.Helpers
@@ -108,12 +108,12 @@ defmodule PhoenixKitDocumentCreator.Web.TypeFormLive do
     {:noreply, refresh_multilang(socket)}
   end
 
-  # `Categories / <category>` — the category is text because the list is
-  # its only page; a type whose category is gone shows the list alone.
+  # `Categories / <category>` — the category links to the list with it
+  # selected; a type whose category is gone shows the list alone.
   defp trail_crumbs(categories, category_uuid, locale) do
     case Enum.find(categories, &(&1.uuid == category_uuid)) do
       nil -> [Helpers.categories_crumb()]
-      category -> [Helpers.categories_crumb(), Helpers.record_crumb(category, locale)]
+      category -> [Helpers.categories_crumb(), Helpers.category_crumb(category, locale)]
     end
   end
 
@@ -148,11 +148,12 @@ defmodule PhoenixKitDocumentCreator.Web.TypeFormLive do
       end
 
     case result do
-      {:ok, _} ->
+      {:ok, type} ->
+        # Back to the category the type is in now — the form can move it.
         {:noreply,
          socket
          |> put_flash(:info, gettext("Type saved."))
-         |> push_navigate(to: Routes.path("/admin/document-creator/categories"))}
+         |> push_navigate(to: Paths.category(type.category_uuid))}
 
       {:error, changeset} ->
         {:noreply, assign(socket, changeset: changeset, form: to_form(changeset, as: :type))}
@@ -167,7 +168,7 @@ defmodule PhoenixKitDocumentCreator.Web.TypeFormLive do
         {:noreply,
          socket
          |> put_flash(:info, gettext("Type permanently deleted."))
-         |> push_navigate(to: Routes.path("/admin/document-creator/categories"))}
+         |> push_navigate(to: Paths.category(type.category_uuid))}
 
       {:error, reason} ->
         Logger.error("permanently_delete_type failed: #{inspect(reason)}")
@@ -180,7 +181,7 @@ defmodule PhoenixKitDocumentCreator.Web.TypeFormLive do
     ~H"""
     <div class="flex flex-col mx-auto max-w-xl px-4 py-6 gap-6">
       <div class="flex items-center gap-3">
-        <a href={Routes.path("/admin/document-creator/categories")} class="btn btn-ghost btn-sm">
+        <a href={Paths.category(@type.category_uuid)} class="btn btn-ghost btn-sm">
           <span class="hero-arrow-left w-4 h-4" />
         </a>
         <h1 class="text-2xl font-bold">
@@ -248,7 +249,7 @@ defmodule PhoenixKitDocumentCreator.Web.TypeFormLive do
             </div>
 
             <div class="flex gap-2 justify-end">
-              <a href={Routes.path("/admin/document-creator/categories")} class="btn btn-ghost btn-sm">
+              <a href={Paths.category(@type.category_uuid)} class="btn btn-ghost btn-sm">
                 {gettext("Cancel")}
               </a>
               <button

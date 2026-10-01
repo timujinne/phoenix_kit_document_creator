@@ -17,6 +17,12 @@ defmodule PhoenixKitDocumentCreator.PathsTest do
       assert Paths.documents() =~ "/admin/document-creator/documents"
     end
 
+    test "category/1 is the categories page with that category selected in the query" do
+      uuid = "019a0000-0000-7000-8000-000000000001"
+
+      assert Paths.category(uuid) == Paths.categories() <> "?category=" <> uuid
+    end
+
     test "settings/0 returns the settings subpath" do
       assert Paths.settings() =~ "/admin/settings/document-creator"
     end

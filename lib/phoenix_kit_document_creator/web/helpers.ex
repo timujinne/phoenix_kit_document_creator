@@ -33,12 +33,19 @@ defmodule PhoenixKitDocumentCreator.Web.Helpers do
   def categories_crumb, do: %{label: gettext("Categories"), path: Paths.categories()}
 
   @doc """
-  A text crumb for a category or type, named in `locale` the way the
-  list page names it. Text, not a link: the Categories list is the only
-  page either record has.
+  A text crumb for a type, named in `locale` the way the list page names
+  it. Text, not a link: a type has no page of its own.
   """
   @spec record_crumb(struct(), String.t() | nil) :: map()
   def record_crumb(record, locale), do: %{label: Taxonomy.localized_name(record, locale)}
+
+  @doc """
+  The crumb for a category, named in `locale` the way the list page names
+  it, linking to the Categories page with that category selected.
+  """
+  @spec category_crumb(struct(), String.t() | nil) :: map()
+  def category_crumb(category, locale),
+    do: %{label: Taxonomy.localized_name(category, locale), path: Paths.category(category.uuid)}
 
   @doc """
   The actor opts list to thread into context-fn calls: `[actor_uuid: uuid]`

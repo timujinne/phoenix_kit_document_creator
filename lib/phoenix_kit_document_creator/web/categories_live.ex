@@ -5,6 +5,11 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
   Two-column layout: left column lists Categories, right column lists
   Types for the currently selected category. Each column has Active/Trash
   sub-tabs and row menus for Edit / Trash / Restore / Delete Forever.
+
+  The selected category is part of the URL (`?category=<uuid>`, see
+  `PhoenixKitDocumentCreator.Paths.category/1`), so the type, category and
+  preset forms send the admin back to the category they came from, its
+  types open, and a reload keeps it.
   """
   use Phoenix.LiveView
   use Gettext, backend: PhoenixKitDocumentCreator.Gettext
@@ -41,7 +46,7 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
   end
 
   @impl true
-  def handle_params(_params, uri, socket) do
+  def handle_params(params, uri, socket) do
     url_path = URI.parse(uri).path || "/"
 
     socket =
@@ -50,6 +55,7 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
       # telemetry hook has synced the process-global Gettext locale.
       |> assign(url_path: url_path, locale: Gettext.get_locale(PhoenixKitDocumentCreator.Gettext))
       |> Helpers.assign_trail(gettext("Categories"))
+      |> put_selected(params)
       |> reload_categories()
 
     {:noreply, socket}
@@ -60,10 +66,11 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
   @impl true
   def handle_event("select_category", %{"uuid" => uuid}, socket) do
     with_category(socket, uuid, fn category ->
+      # `handle_params/3` opens the category from the URL.
       {:noreply,
        socket
-       |> assign(selected: category, types_status_mode: "active")
-       |> reload_types()}
+       |> assign(types_status_mode: "active")
+       |> push_patch(to: selected_path(socket, category.uuid))}
     end)
   end
 
@@ -75,8 +82,8 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
       when mode in ["active", "trashed"] do
     {:noreply,
      socket
-     |> assign(categories_status_mode: mode, selected: nil, types: [])
-     |> reload_categories()}
+     |> assign(categories_status_mode: mode)
+     |> push_patch(to: selected_path(socket, nil))}
   end
 
   def handle_event(
@@ -105,8 +112,7 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
              :info,
              gettext("Category trashed. Its types and templates have also been moved to trash.")
            )
-           |> assign(selected: nil, types: [])
-           |> reload_categories()}
+           |> push_patch(to: selected_path(socket, nil))}
 
         {:error, reason} ->
           Logger.error("trash_category failed: #{inspect(reason)}")
@@ -138,8 +144,7 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
           {:noreply,
            socket
            |> put_flash(:info, gettext("Category permanently deleted."))
-           |> assign(selected: nil, types: [])
-           |> reload_categories()}
+           |> push_patch(to: selected_path(socket, nil))}
 
         {:error, reason} ->
           Logger.error("permanently_delete_category failed: #{inspect(reason)}")
@@ -665,6 +670,26 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
   end
 
   # ── Private helpers ────────────────────────────────────────────────────────
+
+  # `?category=<uuid>` selects a category. Only its uuid is put here:
+  # `reload_categories/1` resolves it against the list it loads and drops
+  # one that is not there (gone, or in the other status tab). Another
+  # category opens on its active types.
+  defp put_selected(socket, %{"category" => uuid}) when is_binary(uuid) and uuid != "" do
+    case socket.assigns.selected do
+      %{uuid: ^uuid} -> socket
+      _ -> assign(socket, selected: %{uuid: uuid}, types_status_mode: "active")
+    end
+  end
+
+  defp put_selected(socket, _params), do: assign(socket, selected: nil)
+
+  # This page's own path (locale prefix included, so the patch stays on this
+  # LiveView) with the category selected, or with none.
+  defp selected_path(socket, nil), do: socket.assigns.url_path
+
+  defp selected_path(socket, uuid),
+    do: socket.assigns.url_path <> "?" <> URI.encode_query(category: uuid)
 
   # Looks the category up by uuid and runs `fun` with it. If the row is gone
   # (e.g. another admin deleted it between render and click), flashes a notice

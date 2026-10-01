@@ -18,8 +18,8 @@ defmodule PhoenixKitDocumentCreator.Web.PresetFormLive do
 
   require Logger
 
-  alias PhoenixKit.Utils.Routes
   alias PhoenixKitDocumentCreator.Documents
+  alias PhoenixKitDocumentCreator.Paths
   alias PhoenixKitDocumentCreator.Schemas.TemplatePreset
   alias PhoenixKitDocumentCreator.Taxonomy
   alias PhoenixKitDocumentCreator.Web.Helpers
@@ -70,18 +70,19 @@ defmodule PhoenixKitDocumentCreator.Web.PresetFormLive do
   end
 
   # `Categories / <category>` for a new preset, `/ <preset>` on top for an
-  # edit; both records are text because the list is their only page.
+  # edit; the category links to the list with it selected, the preset is
+  # text because that list is its only page.
   defp assign_trail(socket, :new, _preset, category, locale) do
     Helpers.assign_trail(socket, gettext("New preset"), [
       Helpers.categories_crumb(),
-      Helpers.record_crumb(category, locale)
+      Helpers.category_crumb(category, locale)
     ])
   end
 
   defp assign_trail(socket, :edit, preset, category, locale) do
     Helpers.assign_trail(socket, gettext("Edit"), [
       Helpers.categories_crumb(),
-      Helpers.record_crumb(category, locale),
+      Helpers.category_crumb(category, locale),
       %{label: preset.name}
     ])
   end
@@ -123,7 +124,7 @@ defmodule PhoenixKitDocumentCreator.Web.PresetFormLive do
         {:noreply,
          socket
          |> put_flash(:info, gettext("Preset saved."))
-         |> push_navigate(to: Routes.path("/admin/document-creator/categories"))}
+         |> push_navigate(to: Paths.category(socket.assigns.category.uuid))}
 
       {:error, changeset} ->
         {:noreply,
@@ -357,7 +358,7 @@ defmodule PhoenixKitDocumentCreator.Web.PresetFormLive do
 
         <div class="flex gap-2">
           <button type="submit" class="btn btn-primary">{gettext("Save")}</button>
-          <a href={Routes.path("/admin/document-creator/categories")} class="btn btn-ghost">
+          <a href={Paths.category(@category.uuid)} class="btn btn-ghost">
             {gettext("Cancel")}
           </a>
         </div>
