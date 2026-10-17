@@ -231,12 +231,8 @@ defmodule PhoenixKitDocumentCreator do
   @new_integration_provider "google"
   @new_integration_name "default"
 
-  # Implements the optional `migrate_legacy/0` callback added in core
-  # V107+. Hex `~> 1.7` doesn't declare it on the `PhoenixKit.Module`
-  # behaviour, so `@impl PhoenixKit.Module` would warn — keep this as
-  # a plain function until the floor version is bumped. The orchestrator
-  # in `PhoenixKit.ModuleRegistry.run_all_legacy_migrations/0`
-  # dispatches by `function_exported?/3` regardless of the annotation.
+  # Runs at host boot via `PhoenixKit.ModuleRegistry.run_all_legacy_migrations/0`.
+  @impl PhoenixKit.Module
   def migrate_legacy do
     creds_result = migrate_legacy_oauth_credentials()
     refs_result = migrate_legacy_connection_references()
@@ -274,36 +270,30 @@ defmodule PhoenixKitDocumentCreator do
   rescue
     e ->
       Logger.warning(
-        "[DocumentCreator] OAuth credentials migration raised: #{Exception.message(e)}"
+        "[DocumentCreator] OAuth credentials migration raised: exception=#{inspect(e.__struct__)}"
       )
 
       {:error, e}
   end
 
-  # Prefer the uuid-strict `find_uuid_by_provider_name/1` (core 1.7.105+)
-  # so the check matches the same lookup shape we use elsewhere
-  # (`migrate_legacy_connection_references/0`, the consumer pattern in
-  # AGENTS.md). On older cores that pre-date the helper, fall back to
-  # the legacy `provider:name` string lookup against `get_integration/1`'s
-  # dual-input read shim. The fallback can be deleted once
-  # `phoenix_kit ~> 1.7.105` is the floor in `mix.exs` (also tracked in
-  # dev_docs/migration_cleanup.md).
+  # A row can exist before any credentials were saved (manual creation or an
+  # interrupted migration). Preserve even partially configured connections.
   defp already_migrated? do
-    storage_key = "#{@new_integration_provider}:#{@new_integration_name}"
+    case Integrations.find_uuid_by_provider_name(
+           {@new_integration_provider, @new_integration_name}
+         ) do
+      {:ok, uuid} ->
+        # Inspect presence in storage, so a temporarily undecryptable secret
+        # is still protected from being overwritten by the legacy value.
+        data = Settings.get_json_setting_by_uuid(uuid, %{})
 
-    if function_exported?(Integrations, :find_uuid_by_provider_name, 1) do
-      # `apply/3` is deliberate: cores that pre-date the helper would
-      # otherwise emit an "undefined function" warning at compile time
-      # even though the `function_exported?/3` guard makes the call
-      # safe at runtime. Drop the `apply/3` once `~> 1.7.105` is the
-      # floor in `mix.exs`.
-      # credo:disable-for-next-line Credo.Check.Refactor.Apply
-      apply(Integrations, :find_uuid_by_provider_name, [storage_key]) |> is_binary()
-    else
-      case Integrations.get_integration(storage_key) do
-        {:ok, _} -> true
-        _ -> false
-      end
+        Enum.any?(
+          ~w(client_id client_secret access_token refresh_token),
+          &(data[&1] not in [nil, ""])
+        )
+
+      {:error, :not_found} ->
+        false
     end
   end
 
@@ -311,70 +301,52 @@ defmodule PhoenixKitDocumentCreator do
     integration_data = build_integration_data(legacy_data)
     integration_key = "#{@new_integration_provider}:#{@new_integration_name}"
 
-    # Two-step write under core's strict-UUID Integrations API: create
-    # the row via `add_connection/3` (the only legitimate place to
-    # construct a new `integration:{provider}:{name}` storage key),
-    # then save the migrated credentials against the returned uuid.
-    with {:ok, %{uuid: uuid}} <-
-           ensure_connection(@new_integration_provider, @new_integration_name),
-         {:ok, _saved} <- Integrations.save_setup(uuid, integration_data) do
-      migrate_legacy_folders(legacy_data)
-      clear_legacy_oauth_key()
+    # Commit the connection, folders and plaintext cleanup together. Otherwise
+    # a failed write leaves an apparently migrated row that later boots skip,
+    # or clears the only copy of folder settings that were never saved.
+    repo = PhoenixKit.RepoHelper.repo()
 
-      log_migration_activity(:credentials_migrated, %{
-        legacy_key: @legacy_oauth_settings_key,
-        new_key: "integration:#{integration_key}",
-        integration_uuid: uuid
-      })
+    result =
+      repo.transaction(fn ->
+        with {:ok, %{uuid: uuid}} <-
+               ensure_connection(@new_integration_provider, @new_integration_name),
+             {:ok, _saved} <- Integrations.save_setup(uuid, integration_data),
+             {:ok, _folders} <- migrate_legacy_folders(legacy_data),
+             {:ok, _cleared} <- clear_legacy_oauth_key() do
+          uuid
+        else
+          {:error, reason} -> repo.rollback(reason)
+        end
+      end)
 
-      Logger.info(
-        "[DocumentCreator] Migrated legacy '#{@legacy_oauth_settings_key}' → 'integration:#{integration_key}'"
-      )
+    case result do
+      {:ok, uuid} ->
+        log_migration_activity(:credentials_migrated, %{
+          legacy_key: @legacy_oauth_settings_key,
+          new_key: "integration:#{integration_key}",
+          integration_uuid: uuid
+        })
 
-      :migrated
-    else
-      {:error, reason} ->
-        Logger.warning(
-          "[DocumentCreator] OAuth credentials migration save failed: #{inspect(reason)}"
+        Logger.info(
+          "[DocumentCreator] Migrated legacy '#{@legacy_oauth_settings_key}' → 'integration:#{integration_key}'"
         )
+
+        :migrated
+
+      {:error, reason} ->
+        Logger.warning("[DocumentCreator] OAuth credentials migration save failed")
 
         {:error, reason}
     end
   end
 
   defp ensure_connection(provider, name) do
-    case Integrations.add_connection(provider, name) do
-      {:ok, %{uuid: _} = result} ->
-        {:ok, result}
-
-      {:error, :already_exists} ->
-        resolve_existing_connection_uuid(provider, name)
-
-      error ->
-        error
-    end
-  end
-
-  # Cross-version compat for the `:already_exists` resolve step.
-  #
-  # `find_uuid_by_provider_name/1` is the cleaner V107 primitive but
-  # doesn't exist in Hex `~> 1.7`. Without the `function_exported?/3`
-  # gate, dialyzer / `mix precommit` flags it as a missing call.
-  # When the floor version is bumped past V107 the gate can be
-  # removed and the call inlined.
-  defp resolve_existing_connection_uuid(provider, name) do
-    if function_exported?(Integrations, :find_uuid_by_provider_name, 1) do
-      # credo:disable-for-next-line Credo.Check.Refactor.Apply
-      case apply(Integrations, :find_uuid_by_provider_name, [{provider, name}]) do
-        {:ok, uuid} -> {:ok, %{uuid: uuid}}
-        error -> error
-      end
-    else
-      # Pre-V107 fallback — scan provider's connections by name.
-      case Integrations.list_connections(provider) |> Enum.find(&(&1.name == name)) do
-        %{uuid: uuid} -> {:ok, %{uuid: uuid}}
-        _ -> {:error, :not_found}
-      end
+    # Core allows duplicate names; add_connection/3 does not return
+    # :already_exists. Reuse an empty row so existing UUID references survive.
+    case Integrations.find_uuid_by_provider_name({provider, name}) do
+      {:ok, uuid} -> {:ok, %{uuid: uuid}}
+      {:error, :not_found} -> Integrations.add_connection(provider, name)
+      error -> error
     end
   end
 
@@ -429,32 +401,13 @@ defmodule PhoenixKitDocumentCreator do
 
   defp maybe_put_connected_at(data, _legacy_data), do: data
 
-  # After the credentials are migrated into a `PhoenixKit.Integrations`
-  # row (which encrypts secrets at rest), the original
-  # `document_creator_google_oauth` settings row still holds plaintext
-  # `client_secret` / `access_token` / `refresh_token`. `already_migrated?/0`
-  # stops re-migration on subsequent boots, so without this cleanup the
-  # plaintext copies would persist in `phoenix_kit_settings` indefinitely.
-  # Overwrite with `%{}` to keep the row but drop the secrets. Failure
-  # here doesn't roll back the migration — it's a best-effort secrets
-  # wipe; ops can always remove the row by hand.
+  # Remove plaintext copies only in the transaction that saves their new home.
   defp clear_legacy_oauth_key do
     Settings.update_json_setting_with_module(
       @legacy_oauth_settings_key,
       %{},
       module_key()
     )
-
-    :ok
-  rescue
-    e ->
-      Logger.warning(
-        "[DocumentCreator] Failed to clear legacy OAuth key after migration — " <>
-          "plaintext secrets may remain in '#{@legacy_oauth_settings_key}'. " <>
-          "exception=#{inspect(e.__struct__)}"
-      )
-
-      :ok
   end
 
   defp migrate_legacy_folders(legacy_data) do
@@ -474,12 +427,9 @@ defmodule PhoenixKitDocumentCreator do
         folder_data,
         module_key()
       )
+    else
+      {:ok, nil}
     end
-  rescue
-    e ->
-      Logger.warning(
-        "[DocumentCreator] Failed to move legacy folder config: #{Exception.message(e)}"
-      )
   end
 
   # Migration (2): boot-time sweep that resolves any name-string
@@ -539,10 +489,9 @@ defmodule PhoenixKitDocumentCreator do
     end
   end
 
-  # `find_uuid_by_provider_name/1` is the cleaner core API but only
-  # exists in newer phoenix_kit versions. Use `list_connections/1`
-  # (long-stable) so this works against any phoenix_kit dep this
-  # module's mix.exs allows.
+  # Resolves a legacy `provider` / `provider:name` string through
+  # `list_connections/1`, defaulting the name to `"default"` (the one case
+  # `find_uuid_by_provider_name/1` answers differently for a bare provider).
   defp resolve_via_list_connections(name_string) do
     {provider, name} =
       case String.split(name_string, ":", parts: 2) do

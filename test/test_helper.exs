@@ -112,7 +112,7 @@ Application.put_env(:phoenix_kit_document_creator, :test_repo_available, repo_av
 # Pin `PhoenixKit.Config.url_prefix/0` to "/" via :persistent_term so
 # tests that boot before any settings read get a stable value (the LV
 # routes use `Routes.path/1`, which reads this).
-:persistent_term.put(:phoenix_kit_url_prefix, "/")
+:persistent_term.put({PhoenixKit.Config, :url_prefix}, "/")
 
 # Start minimal PhoenixKit services needed for tests
 {:ok, _pid} = PhoenixKit.PubSub.Manager.start_link([])

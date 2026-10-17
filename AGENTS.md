@@ -13,7 +13,7 @@ uses the Drive export endpoint. Templates are organised by a Category → Type
 taxonomy with per-category presets, and documents can be composed from several
 template sections.
 
-- **Depends on:** `phoenix_kit` `>= 2.38.0 and < 3.0.0` (Hex) — Module behaviour, Settings,
+- **Depends on:** `phoenix_kit` `>= 2.43.0 and < 3.0.0` (Hex) — Module behaviour, Settings,
   Integrations, Activity, PubSubHelper, `Utils.Routes`, `Utils.Slug`,
   `Utils.Multilang`, `SchemaPrefix`, `Modules.Storage`, `Modules.Languages`,
   core web components. Plus `phoenix_live_view ~> 1.2`, `req ~> 0.5`,
@@ -433,9 +433,10 @@ rejected credentials up front instead of letting the pool time out later.
 
 Two conformance tests are load-bearing and should not be relaxed:
 `core_pin_conformance_test.exs` (the `:phoenix_kit` requirement keeps the
-compound `>= 2.38.0 and < 3.0.0` form — the floor is the core that carries
-`PhoenixKitWeb.Actor`, `Activity.log/3` and `Storage.ResourceFolders`, and a
-three-segment `~> 2.38.0` would pin a single minor and break consumers, never
+compound `>= 2.43.0 and < 3.0.0` form — the floor is the first core that
+compiles on Erlang/OTP 28 (it also carries `PhoenixKitWeb.Actor`,
+`Activity.log/3` and `Storage.ResourceFolders`), and a three-segment
+`~> 2.43.0` would pin a single minor and break consumers, never
 this repo) and
 `schema_prefix_conformance_test.exs` (every table-backed schema must
 `use PhoenixKit.SchemaPrefix`).

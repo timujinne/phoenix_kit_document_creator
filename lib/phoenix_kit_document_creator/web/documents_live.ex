@@ -582,7 +582,7 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
   end
 
   def handle_event("open_media_picker", %{"name" => var_name, "mode" => mode}, socket) do
-    current_path = socket.assigns[:url_path] || "/admin/document-creator"
+    current_path = socket.assigns[:url_path] || PhoenixKitDocumentCreator.Paths.index()
     template_file_id = get_in(socket.assigns, [:modal_selected_template, "id"])
     existing_image_values = JSON.encode!(socket.assigns.modal_image_values)
 

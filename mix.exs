@@ -98,14 +98,16 @@ defmodule PhoenixKitDocumentCreator.MixProject do
       # Under a looser floor a host resolves a core where the link lands on the
       # wrong page — in the consumer's app, never in this repo's own run,
       # because the workspace always resolves the newest core.
-      #   - 2.38.0 is the floor now: the actor and activity log come from
+      #   - 2.43.0 is the floor now: it is the first core that compiles on
+      #     Erlang/OTP 28 (older releases keep a regex in a module attribute).
+      #   - 2.38.0 was the floor before that: the actor and activity log come from
       #     `PhoenixKitWeb.Actor` and `Activity.log/3`, the template image
       #     scope folder from `Storage.ResourceFolders`, and the edit forms use
       #     `mount_multilang(open_on:)` — none feature-detected, so an older
       #     core fails to compile the package.
       # Patch-precise floor in the compound form, so every later 2.x minor
       # still satisfies it (see test/core_pin_conformance_test.exs).
-      pk_dep(:phoenix_kit, ">= 2.38.0 and < 3.0.0"),
+      pk_dep(:phoenix_kit, ">= 2.43.0 and < 3.0.0"),
 
       # mdex_native (pulled in transitively through phoenix_kit's mdex dep)
       # builds from source when MDEX_NATIVE_BUILD=1 is set in the
