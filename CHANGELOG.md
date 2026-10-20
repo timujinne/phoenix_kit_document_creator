@@ -1,3 +1,25 @@
+## 0.9.15 - 2026-10-17
+
+### Changed
+
+- Requires `phoenix_kit` `>= 2.43.0 and < 3.0.0`, the first core that
+  compiles on Erlang/OTP 28. The locked core moves to 2.62.2, and the
+  compat shims around `Integrations.find_uuid_by_provider_name/1` are gone.
+- `migrate_legacy/0` carries `@impl PhoenixKit.Module`.
+
+### Fixed
+
+- The legacy Google credentials migration no longer re-runs on every boot:
+  the "already migrated" check never matched core's `{:ok, uuid}` answer.
+  It now skips only when the existing `google:default` connection holds
+  credentials; an empty connection is reused and receives the legacy ones.
+- The legacy credentials migration is atomic: credentials, folder settings
+  and the plaintext cleanup commit in one transaction, so a failed write
+  keeps the legacy data and logs no success. Error logs no longer include
+  exception messages or save-error payloads.
+- The media picker's fallback return path goes through `Paths.index/0`
+  instead of a hardcoded admin URL.
+
 ## 0.9.14 - 2026-09-29
 
 ### Changed
