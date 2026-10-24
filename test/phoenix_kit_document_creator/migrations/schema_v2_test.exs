@@ -37,4 +37,25 @@ defmodule PhoenixKitDocumentCreator.Migrations.SchemaV2Test do
              WHERE indexname = 'phoenix_kit_doc_template_taxonomy_tmpl_cat_index'
              """)
   end
+
+  # The comment wording is deliberately not pinned (it is host-neutral prose
+  # and may be reworded); what must hold is that both legacy mirror columns
+  # carry a deprecation warning against dropping them.
+  test "the legacy category_uuid / type_uuid columns carry a do-not-drop deprecation comment" do
+    for column <- ~w(category_uuid type_uuid) do
+      assert %{rows: [[comment]]} =
+               TestRepo.query!(
+                 """
+                 SELECT col_description('public.phoenix_kit_doc_templates'::regclass, a.attnum)
+                 FROM pg_attribute a
+                 WHERE a.attrelid = 'public.phoenix_kit_doc_templates'::regclass
+                   AND a.attname = $1
+                 """,
+                 [column]
+               )
+
+      assert comment =~ "deprecated"
+      assert comment =~ "do not drop"
+    end
+  end
 end

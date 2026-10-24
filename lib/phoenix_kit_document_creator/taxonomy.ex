@@ -974,22 +974,22 @@ defmodule PhoenixKitDocumentCreator.Taxonomy do
   end
 
   # ---------------------------------------------------------------------------
-  # Default group order (part А — the canonical ANDI group set)
+  # Default group order (part А — the canonical group set)
   # ---------------------------------------------------------------------------
 
-  # The canonical order ANDI expects its template groups (Types) to appear in
+  # The canonical order the host app expects its template groups (Types) to appear in
   # (Hinnapakkumine before Tellimus, etc.). Positions 0..8 follow this order.
   @default_group_order ~w(
     Hinnapakkumine Eeltellimus Moodistamine Tellimus Leping
     Joonised Vastuvõtuakt Garantii Hooldusjuhend
   )
 
-  @doc "Returns the canonical ANDI group names, in order."
+  @doc "Returns the canonical group names, in order."
   @spec default_group_order() :: [String.t()]
   def default_group_order, do: @default_group_order
 
   @doc """
-  Seeds (idempotently) the canonical ANDI group set under `category_uuid`,
+  Seeds (idempotently) the canonical group set under `category_uuid`,
   positioned `0..8` in `default_group_order/0` order.
 
   - A missing canonical group is created at its canonical position.

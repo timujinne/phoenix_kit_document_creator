@@ -436,16 +436,16 @@
   it drops the join table, and only the single-binding legacy mirror survives.
 
 - **A "Standard groups" seed** (`Taxonomy.ensure_default_group_order/2`, plus a
-  button in the categories admin) puts the nine canonical ANDI groups in order.
+  button in the categories admin) puts the nine canonical groups in order.
   Idempotent.
 
 ### Changed
 
 - **The legacy `templates.category_uuid`/`type_uuid` columns are kept and kept
   populated** as a backward-compatibility mirror of the *primary* membership
-  (the one whose category has the lowest `Category.position`), so the ANDI
+  (the one whose category has the lowest `Category.position`), so the host-app
   consumer keeps working unchanged until it migrates to the join table. **Do
-  not drop them without a coordinated ANDI migration.** The mirror is
+  not drop them without a coordinated host-app migration.** The mirror is
   recomputed from surviving active memberships on category/group
   trash and restore, so it never points at a trashed category and a
   multi-category template does not vanish from single-category readers.

@@ -120,10 +120,10 @@ tables, V94 for the `google_doc_id` / `status` / `path` / `folder_id` columns):
 > a template's category/group membership is many-to-many, stored in
 > `phoenix_kit_doc_template_taxonomy`. The `category_uuid` and `type_uuid`
 > columns above are kept and kept populated as a backward-compatibility mirror
-> of the *primary* membership (lowest `Category.position`) so the ANDI consumer
+> of the *primary* membership (lowest `Category.position`) so the host-app consumer
 > keeps working until it migrates to the join table. Both are stamped with a
 > deprecation `COMMENT` in the database. **Do not drop them without a
-> coordinated ANDI migration** — a later chain version removes them once ANDI
+> coordinated host-app migration** — a later chain version removes them once the host app
 > reads memberships directly.
 
 ### `phoenix_kit_doc_template_taxonomy` (V2)

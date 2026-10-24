@@ -155,7 +155,7 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLiveTest do
     # `live/2` runs the LiveView in its own process, so `Gettext.put_locale/2`
     # called from the test process never reaches it — DC has no locale-sync
     # on_mount hook of its own (that's the host app's job, see
-    # `Andi.Locales.sync_from_phoenix_kit/0`). Rendering with an untranslated
+    # `sync_from_phoenix_kit/0` in its locales module). Rendering with an untranslated
     # category still exercises the real code path (`Taxonomy.localized_name/2`
     # is called either way and falls back to `name`), just not the "different
     # locale, different text" branch — that one is covered directly by the

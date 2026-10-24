@@ -245,7 +245,7 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
     {:noreply, reload_types(socket)}
   end
 
-  # Code seed for part А: create/reposition the 9 canonical ANDI groups under
+  # Code seed for part А: create/reposition the 9 canonical groups under
   # the selected category, in order. Idempotent (see
   # `Taxonomy.ensure_default_group_order/2`).
   def handle_event("seed_default_groups", %{"uuid" => uuid}, socket) do
@@ -393,11 +393,11 @@ defmodule PhoenixKitDocumentCreator.Web.CategoriesLive do
                     phx-value-uuid={@selected.uuid}
                     data-confirm={
                       gettext(
-                        "Create the standard ANDI groups (Hinnapakkumine … Hooldusjuhend) in this category, in order? Existing groups with these names are only repositioned."
+                        "Create the standard groups (Hinnapakkumine … Hooldusjuhend) in this category, in order? Existing groups with these names are only repositioned."
                       )
                     }
                     class="btn btn-ghost btn-xs"
-                    title={gettext("Seed the standard ANDI group order")}
+                    title={gettext("Seed the standard group order")}
                   >
                     <span class="hero-sparkles w-3 h-3" /> {gettext("Standard groups")}
                   </button>

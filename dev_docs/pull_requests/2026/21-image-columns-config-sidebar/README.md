@@ -24,7 +24,7 @@ The second is a one-line sidebar ordering fix.
 | `web/components/variable_config_form.ex` | A Columns `<select>` (1..4) for `:image_list` variables, styled like the existing `separator`/`max_count` fields. |
 
 The selected value flows: template editor → `variables[*].config.columns` → consumer
-(Andi's order document picker) → `image_params[slot]["columns"]` → `google_docs_client`'s
+(a host app's order document picker) → `image_params[slot]["columns"]` → `google_docs_client`'s
 column-aware dispatch (`cols >= 2` ⇒ table grid, `cols == 1` ⇒ inline).
 
 ### 2. Sidebar: Categories tab moved last

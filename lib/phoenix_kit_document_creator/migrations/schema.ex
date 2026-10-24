@@ -23,7 +23,7 @@ defmodule PhoenixKitDocumentCreator.Migrations.Schema do
       `(category_uuid, type_uuid)` bindings are backfilled as one row each.
       The legacy template columns are **kept** as a compatibility mirror of
       the primary membership and **stamped with a deprecation COMMENT** —
-      they must not be dropped until the ANDI consumer migrates.
+      they must not be dropped until the host-app consumer migrates.
 
   The migrated version is tracked as a `dcr_schema:<N>` COMMENT on
   `phoenix_kit_doc_documents` (the marker convention from the projects
@@ -200,7 +200,7 @@ defmodule PhoenixKitDocumentCreator.Migrations.Schema do
   end
 
   # Owner-mandated safeguard: stamp the legacy single-binding columns as
-  # deprecated so nobody drops them before the ANDI consumer migrates to the
+  # deprecated so nobody drops them before the host-app consumer migrates to the
   # join table. They stay populated as a mirror of the primary membership
   # (see `PhoenixKitDocumentCreator.Taxonomy`). Idempotent — COMMENT ON
   # COLUMN simply overwrites.
@@ -208,7 +208,7 @@ defmodule PhoenixKitDocumentCreator.Migrations.Schema do
     note =
       "deprecated: mirror of primary membership for backward compatibility; " <>
         "source of truth is phoenix_kit_doc_template_taxonomy — do not drop " <>
-        "without migrating the ANDI consumer"
+        "without migrating the host app that still reads it"
 
     execute("COMMENT ON COLUMN #{p}phoenix_kit_doc_templates.category_uuid IS '#{note}'")
 

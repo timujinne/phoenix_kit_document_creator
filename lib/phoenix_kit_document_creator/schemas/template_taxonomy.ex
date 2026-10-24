@@ -8,7 +8,7 @@ defmodule PhoenixKitDocumentCreator.Schemas.TemplateTaxonomy do
   several of these rows (one per category), each with its own group. The
   legacy columns are kept as a backward-compatibility mirror of the
   primary membership (see `PhoenixKitDocumentCreator.Taxonomy`) and must
-  not be dropped until the ANDI consumer migrates.
+  not be dropped until the host-app consumer migrates.
 
   Uniqueness: at most one row per `(template_uuid, category_uuid)` — a
   template picks one group per category.

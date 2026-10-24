@@ -63,7 +63,7 @@ defmodule PhoenixKitDocumentCreator.Documents.Composer do
   @spec compose([section_input()], keyword()) ::
           {:ok, Document.t()} | {:error, term()}
   # Required opts: `:created_by_uuid :: UUIDv7.t()`, `:name :: String.t()` (caller-supplied
-  # document name; ANDI derives from order/sub-order context). Optional: `:separator`.
+  # document name; the host app derives from order/sub-order context). Optional: `:separator`.
   def compose(sections, opts) do
     with {:ok, created_by} <- fetch_opt(opts, :created_by_uuid),
          {:ok, name} <- fetch_opt(opts, :name) do

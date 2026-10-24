@@ -48,7 +48,7 @@ defmodule PhoenixKitDocumentCreator.GoogleDocsClient do
     (line-height rounding, the little Docs adds before flowing an image vs.
     plain text) — hence the much smaller default.
 
-    Calibrated live 2026-09-22/23 against Andi's landscape "Joonised
+    Calibrated live 2026-09-22/23 against a consuming app's landscape "Joonised
     (tootmine)" template and the composite Hinnapakkumine + Joonised +
     Leping preview (A4 landscape, 72pt margins, the shared "house" header —
     a 1x2 table with a logo — and house footer — a `horizontalRule` element,

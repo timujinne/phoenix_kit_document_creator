@@ -1,6 +1,6 @@
 defmodule PhoenixKitDocumentCreator.TaxonomyGroupSeedTest do
   @moduledoc """
-  Covers the code seed for the canonical ANDI group order (part А):
+  Covers the code seed for the canonical group order (part А):
   `Taxonomy.ensure_default_group_order/2`.
   """
   use PhoenixKitDocumentCreator.DataCase, async: true

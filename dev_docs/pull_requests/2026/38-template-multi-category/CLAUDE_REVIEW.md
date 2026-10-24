@@ -6,8 +6,8 @@
 
 Replaces a template's single `category_uuid`/`type_uuid` binding with a
 many-to-many join (`phoenix_kit_doc_template_taxonomy`), keeps the legacy
-columns as a mirror of the primary membership for the ANDI consumer, adds
-migration chain V2 with a backfill, and seeds the nine canonical ANDI groups.
+columns as a mirror of the primary membership for the host-app consumer, adds
+migration chain V2 with a backfill, and seeds the nine canonical groups.
 
 The PR had already been through two adversarial review rounds (`e64239e`,
 `c9b6d8b`) and its "Known follow-ups" list is honest and specific. I re-derived
@@ -81,5 +81,5 @@ realigned mirror; no DB-level mirror⇔join constraint; the seed duplicating a
 soft-deleted canonical group because `Type` has no unique index on
 `(name, category_uuid)`; the cosmetic stale membership row after trash) are all
 real, all correctly characterised as non-blocking, and all cheaper to fix once
-ANDI migrates and the legacy columns can be dropped outright. The missing unique
+the host app migrates and the legacy columns can be dropped outright. The missing unique
 index on `Type(name, category_uuid)` is the one most likely to bite first.

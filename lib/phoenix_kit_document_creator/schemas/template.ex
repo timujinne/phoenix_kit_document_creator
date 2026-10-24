@@ -16,7 +16,7 @@ defmodule PhoenixKitDocumentCreator.Schemas.Template do
   **many-to-many** relation stored in `phoenix_kit_doc_template_taxonomy`
   (see `PhoenixKitDocumentCreator.Schemas.TemplateTaxonomy`). The two
   single-binding columns below are **deprecated** but deliberately **kept
-  and kept populated** as a mirror of the *primary* membership so the ANDI
+  and kept populated** as a mirror of the *primary* membership so the host-app
   consumer keeps working until it migrates to the join table:
 
     * `category_uuid` — mirror of the lowest-`Category.position` **active**
@@ -40,8 +40,8 @@ defmodule PhoenixKitDocumentCreator.Schemas.Template do
   stays authoritative.
 
   Both columns are stamped with a deprecation `COMMENT` in the database (V2).
-  They must not be dropped without a coordinated ANDI migration; a later chain
-  version will remove them once ANDI reads memberships directly.
+  They must not be dropped without a coordinated host-app migration; a later chain
+  version will remove them once the host app reads memberships directly.
   """
   use Ecto.Schema
   use PhoenixKit.SchemaPrefix
