@@ -14,13 +14,13 @@ defmodule PhoenixKitDocumentCreator.Migrations.SchemaV2Test do
   alias PhoenixKitDocumentCreator.Migrations.Schema
   alias PhoenixKitDocumentCreator.Test.Repo, as: TestRepo
 
-  test "current_version/0 is 2" do
-    assert Schema.current_version() == 2
+  test "current_version/0 is 3" do
+    assert Schema.current_version() == 3
   end
 
   test "runtime version resolves to current after boot (marker stamped)" do
     assert Schema.migrated_version_runtime() == Schema.current_version()
-    assert Schema.migrated_version_runtime(prefix: "public") == 2
+    assert Schema.migrated_version_runtime(prefix: "public") == 3
   end
 
   test "the template_taxonomy join table exists after boot" do

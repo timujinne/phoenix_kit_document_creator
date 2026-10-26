@@ -6,10 +6,22 @@ defmodule PhoenixKitDocumentCreator.Migrations.Schema do
   `migrated_version_runtime/1` + idempotent `up/1` + version-aware
   `down/1`). Adopted per the workspace direction of moving module tables
   out of the core chain (`phoenix_kit_projects` is the reference
-  implementation; the doc TABLES themselves remain core-created — V86 +
-  V94 — this chain only ITERATES on them).
+  implementation).
+
+  Core's V135 baseline still creates seven of the eight tables; V3 re-states
+  them (see below) so this chain builds all of them without core, and owns
+  their shape from now on.
 
   Versions:
+
+    * **V3** — adoption of the seven core-created tables
+      (`phoenix_kit_doc_{categories,document_sections,documents,headers_footers,
+      template_presets,templates,types}`): `CREATE TABLE IF NOT EXISTS`,
+      guarded constraints and `CREATE INDEX IF NOT EXISTS`, identical to what a
+      fresh core builds. A no-op on every existing install. **Emitted first in
+      `up/1`**, ahead of V1 and V2, which alter and reference those tables —
+      the version number is still the next one, so hosts at V2 run it once.
+      `down/1` never drops them.
 
     * **V1** — `phoenix_kit_doc_documents.project_uuid` (nullable FK →
       `phoenix_kit_projects`, ON DELETE SET NULL): real per-project
@@ -33,7 +45,7 @@ defmodule PhoenixKitDocumentCreator.Migrations.Schema do
 
   use Ecto.Migration
 
-  @current_version 2
+  @current_version 3
   @marker_prefix "dcr_schema:"
 
   @spec current_version() :: pos_integer()
@@ -86,6 +98,7 @@ defmodule PhoenixKitDocumentCreator.Migrations.Schema do
     prefix = validated_prefix(opts)
     p = prefix_str(prefix)
 
+    adopt_core_tables(p, prefix)
     v1_project_link(p)
     v2_template_taxonomy(p)
     v2_deprecate_legacy_template_columns(p)
@@ -116,6 +129,9 @@ defmodule PhoenixKitDocumentCreator.Migrations.Schema do
     p = prefix_str(prefix)
     target = Keyword.get(opts, :version, 0)
 
+    # V3 (adoption of the core-created tables) has nothing to undo: `down/1`
+    # never drops a table this chain adopted — the rows are people's documents.
+
     if target < 2 do
       # DROP first (see moduledoc): destroys all V2 membership rows.
       execute("DROP TABLE IF EXISTS #{p}phoenix_kit_doc_template_taxonomy")
@@ -133,6 +149,298 @@ defmodule PhoenixKitDocumentCreator.Migrations.Schema do
     else
       execute("COMMENT ON TABLE #{p}phoenix_kit_doc_documents IS NULL")
     end
+  end
+
+  # V3 — adoption of the seven tables core's V135 baseline creates for this
+  # module (everything but the taxonomy table). Statements are core's, as a
+  # fresh core install builds them today, with core's object names. On every
+  # existing install each one finds its target and does nothing.
+  #
+  # Emitted FIRST in up/1, ahead of V1's ALTER on `phoenix_kit_doc_documents`
+  # and V2's FKs into templates/categories/types: those versions touch tables
+  # that, without core's copy, only this step creates.
+  defp adopt_core_tables(p, prefix) do
+    Enum.each(adoption_tables(p), &execute/1)
+    Enum.each(adoption_constraints(p, prefix), &execute/1)
+    Enum.each(adoption_indexes(p), &execute/1)
+  end
+
+  defp adoption_tables(p) do
+    [
+      """
+      CREATE TABLE IF NOT EXISTS #{p}phoenix_kit_doc_categories (
+        "uuid" uuid DEFAULT #{p}uuid_generate_v7() NOT NULL,
+        "name" character varying(255) NOT NULL,
+        "description" text,
+        "position" integer DEFAULT 0 NOT NULL,
+        "status" character varying(255) DEFAULT 'active'::character varying NOT NULL,
+        "data" jsonb DEFAULT '{}'::jsonb NOT NULL,
+        "inserted_at" timestamp(0) without time zone NOT NULL,
+        "updated_at" timestamp(0) without time zone NOT NULL
+      )
+      """,
+      """
+      CREATE TABLE IF NOT EXISTS #{p}phoenix_kit_doc_document_sections (
+        "uuid" uuid DEFAULT #{p}uuid_generate_v7() NOT NULL,
+        "document_uuid" uuid NOT NULL,
+        "template_uuid" uuid,
+        "position" integer NOT NULL,
+        "variable_values" jsonb DEFAULT '{}'::jsonb NOT NULL,
+        "image_params" jsonb DEFAULT '{}'::jsonb NOT NULL,
+        "created_by_uuid" uuid NOT NULL,
+        "inserted_at" timestamp(0) without time zone NOT NULL,
+        "updated_at" timestamp(0) without time zone NOT NULL
+      )
+      """,
+      """
+      CREATE TABLE IF NOT EXISTS #{p}phoenix_kit_doc_documents (
+        "uuid" uuid DEFAULT #{p}uuid_generate_v7() NOT NULL,
+        "name" character varying(255) NOT NULL,
+        "template_uuid" uuid,
+        "content_html" text DEFAULT ''::text,
+        "content_css" text DEFAULT ''::text,
+        "content_native" jsonb,
+        "variable_values" jsonb DEFAULT '{}'::jsonb,
+        "header_html" text DEFAULT ''::text,
+        "header_css" text DEFAULT ''::text,
+        "header_height" character varying(20) DEFAULT '25mm'::character varying,
+        "footer_html" text DEFAULT ''::text,
+        "footer_css" text DEFAULT ''::text,
+        "footer_height" character varying(20) DEFAULT '20mm'::character varying,
+        "config" jsonb DEFAULT '{"paper_size": "a4", "orientation": "portrait"}'::jsonb,
+        "data" jsonb DEFAULT '{}'::jsonb,
+        "thumbnail" text,
+        "created_by_uuid" uuid,
+        "inserted_at" timestamp(0) without time zone NOT NULL,
+        "updated_at" timestamp(0) without time zone NOT NULL,
+        "google_doc_id" character varying(255),
+        "status" character varying(20) DEFAULT 'published'::character varying,
+        "path" character varying(500),
+        "folder_id" character varying(255),
+        "category_uuid" uuid,
+        "type_uuid" uuid
+      )
+      """,
+      """
+      CREATE TABLE IF NOT EXISTS #{p}phoenix_kit_doc_headers_footers (
+        "uuid" uuid DEFAULT #{p}uuid_generate_v7() NOT NULL,
+        "name" character varying(255) NOT NULL,
+        "type" character varying(20) DEFAULT 'header'::character varying NOT NULL,
+        "html" text DEFAULT ''::text,
+        "css" text DEFAULT ''::text,
+        "native" jsonb,
+        "height" character varying(20) DEFAULT '25mm'::character varying,
+        "data" jsonb DEFAULT '{}'::jsonb,
+        "created_by_uuid" uuid,
+        "inserted_at" timestamp(0) without time zone NOT NULL,
+        "updated_at" timestamp(0) without time zone NOT NULL,
+        "google_doc_id" character varying(255)
+      )
+      """,
+      """
+      CREATE TABLE IF NOT EXISTS #{p}phoenix_kit_doc_template_presets (
+        "uuid" uuid DEFAULT #{p}uuid_generate_v7() NOT NULL,
+        "name" character varying NOT NULL,
+        "description" text,
+        "scope_type" character varying,
+        "scope_id" character varying,
+        "sections" jsonb DEFAULT '[]'::jsonb NOT NULL,
+        "created_by_uuid" uuid NOT NULL,
+        "inserted_at" timestamp(0) without time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp(0) without time zone DEFAULT now() NOT NULL
+      )
+      """,
+      """
+      CREATE TABLE IF NOT EXISTS #{p}phoenix_kit_doc_templates (
+        "uuid" uuid DEFAULT #{p}uuid_generate_v7() NOT NULL,
+        "name" character varying(255) NOT NULL,
+        "slug" character varying(255),
+        "description" text,
+        "status" character varying(20) DEFAULT 'published'::character varying,
+        "content_html" text DEFAULT ''::text,
+        "content_css" text DEFAULT ''::text,
+        "content_native" jsonb,
+        "variables" jsonb DEFAULT '[]'::jsonb,
+        "header_uuid" uuid,
+        "footer_uuid" uuid,
+        "config" jsonb DEFAULT '{"paper_size": "a4", "orientation": "portrait"}'::jsonb,
+        "data" jsonb DEFAULT '{}'::jsonb,
+        "thumbnail" text,
+        "created_by_uuid" uuid,
+        "inserted_at" timestamp(0) without time zone NOT NULL,
+        "updated_at" timestamp(0) without time zone NOT NULL,
+        "google_doc_id" character varying(255),
+        "path" character varying(500),
+        "folder_id" character varying(255),
+        "language" character varying(10),
+        "category_uuid" uuid,
+        "type_uuid" uuid
+      )
+      """,
+      """
+      CREATE TABLE IF NOT EXISTS #{p}phoenix_kit_doc_types (
+        "uuid" uuid DEFAULT #{p}uuid_generate_v7() NOT NULL,
+        "name" character varying(255) NOT NULL,
+        "description" text,
+        "position" integer DEFAULT 0 NOT NULL,
+        "status" character varying(255) DEFAULT 'active'::character varying NOT NULL,
+        "data" jsonb DEFAULT '{}'::jsonb NOT NULL,
+        "category_uuid" uuid NOT NULL,
+        "inserted_at" timestamp(0) without time zone NOT NULL,
+        "updated_at" timestamp(0) without time zone NOT NULL
+      )
+      """
+    ]
+  end
+
+  defp adoption_constraints(p, prefix) do
+    [
+      guarded_constraint(
+        prefix,
+        "phoenix_kit_doc_categories",
+        "phoenix_kit_doc_categories_pkey",
+        "ALTER TABLE #{p}phoenix_kit_doc_categories ADD CONSTRAINT phoenix_kit_doc_categories_pkey PRIMARY KEY (uuid)"
+      ),
+      guarded_constraint(
+        prefix,
+        "phoenix_kit_doc_document_sections",
+        "phoenix_kit_doc_document_sections_pkey",
+        "ALTER TABLE #{p}phoenix_kit_doc_document_sections ADD CONSTRAINT phoenix_kit_doc_document_sections_pkey PRIMARY KEY (uuid)"
+      ),
+      guarded_constraint(
+        prefix,
+        "phoenix_kit_doc_documents",
+        "phoenix_kit_doc_documents_pkey",
+        "ALTER TABLE #{p}phoenix_kit_doc_documents ADD CONSTRAINT phoenix_kit_doc_documents_pkey PRIMARY KEY (uuid)"
+      ),
+      guarded_constraint(
+        prefix,
+        "phoenix_kit_doc_headers_footers",
+        "phoenix_kit_doc_headers_footers_pkey",
+        "ALTER TABLE #{p}phoenix_kit_doc_headers_footers ADD CONSTRAINT phoenix_kit_doc_headers_footers_pkey PRIMARY KEY (uuid)"
+      ),
+      guarded_constraint(
+        prefix,
+        "phoenix_kit_doc_template_presets",
+        "phoenix_kit_doc_template_presets_pkey",
+        "ALTER TABLE #{p}phoenix_kit_doc_template_presets ADD CONSTRAINT phoenix_kit_doc_template_presets_pkey PRIMARY KEY (uuid)"
+      ),
+      guarded_constraint(
+        prefix,
+        "phoenix_kit_doc_templates",
+        "phoenix_kit_doc_templates_pkey",
+        "ALTER TABLE #{p}phoenix_kit_doc_templates ADD CONSTRAINT phoenix_kit_doc_templates_pkey PRIMARY KEY (uuid)"
+      ),
+      guarded_constraint(
+        prefix,
+        "phoenix_kit_doc_types",
+        "phoenix_kit_doc_types_pkey",
+        "ALTER TABLE #{p}phoenix_kit_doc_types ADD CONSTRAINT phoenix_kit_doc_types_pkey PRIMARY KEY (uuid)"
+      ),
+      guarded_constraint(
+        prefix,
+        "phoenix_kit_doc_document_sections",
+        "phoenix_kit_doc_document_sections_document_uuid_fkey",
+        "ALTER TABLE #{p}phoenix_kit_doc_document_sections ADD CONSTRAINT phoenix_kit_doc_document_sections_document_uuid_fkey FOREIGN KEY (document_uuid) REFERENCES #{p}phoenix_kit_doc_documents(uuid) ON DELETE CASCADE"
+      ),
+      guarded_constraint(
+        prefix,
+        "phoenix_kit_doc_document_sections",
+        "phoenix_kit_doc_document_sections_template_uuid_fkey",
+        "ALTER TABLE #{p}phoenix_kit_doc_document_sections ADD CONSTRAINT phoenix_kit_doc_document_sections_template_uuid_fkey FOREIGN KEY (template_uuid) REFERENCES #{p}phoenix_kit_doc_templates(uuid) ON DELETE SET NULL"
+      ),
+      guarded_constraint(
+        prefix,
+        "phoenix_kit_doc_documents",
+        "phoenix_kit_doc_documents_category_uuid_fkey",
+        "ALTER TABLE #{p}phoenix_kit_doc_documents ADD CONSTRAINT phoenix_kit_doc_documents_category_uuid_fkey FOREIGN KEY (category_uuid) REFERENCES #{p}phoenix_kit_doc_categories(uuid) ON DELETE SET NULL"
+      ),
+      guarded_constraint(
+        prefix,
+        "phoenix_kit_doc_documents",
+        "phoenix_kit_doc_documents_template_uuid_fkey",
+        "ALTER TABLE #{p}phoenix_kit_doc_documents ADD CONSTRAINT phoenix_kit_doc_documents_template_uuid_fkey FOREIGN KEY (template_uuid) REFERENCES #{p}phoenix_kit_doc_templates(uuid) ON DELETE SET NULL"
+      ),
+      guarded_constraint(
+        prefix,
+        "phoenix_kit_doc_documents",
+        "phoenix_kit_doc_documents_type_uuid_fkey",
+        "ALTER TABLE #{p}phoenix_kit_doc_documents ADD CONSTRAINT phoenix_kit_doc_documents_type_uuid_fkey FOREIGN KEY (type_uuid) REFERENCES #{p}phoenix_kit_doc_types(uuid) ON DELETE SET NULL"
+      ),
+      guarded_constraint(
+        prefix,
+        "phoenix_kit_doc_templates",
+        "phoenix_kit_doc_templates_category_uuid_fkey",
+        "ALTER TABLE #{p}phoenix_kit_doc_templates ADD CONSTRAINT phoenix_kit_doc_templates_category_uuid_fkey FOREIGN KEY (category_uuid) REFERENCES #{p}phoenix_kit_doc_categories(uuid) ON DELETE SET NULL"
+      ),
+      guarded_constraint(
+        prefix,
+        "phoenix_kit_doc_templates",
+        "phoenix_kit_doc_templates_footer_uuid_fkey",
+        "ALTER TABLE #{p}phoenix_kit_doc_templates ADD CONSTRAINT phoenix_kit_doc_templates_footer_uuid_fkey FOREIGN KEY (footer_uuid) REFERENCES #{p}phoenix_kit_doc_headers_footers(uuid) ON DELETE SET NULL"
+      ),
+      guarded_constraint(
+        prefix,
+        "phoenix_kit_doc_templates",
+        "phoenix_kit_doc_templates_header_uuid_fkey",
+        "ALTER TABLE #{p}phoenix_kit_doc_templates ADD CONSTRAINT phoenix_kit_doc_templates_header_uuid_fkey FOREIGN KEY (header_uuid) REFERENCES #{p}phoenix_kit_doc_headers_footers(uuid) ON DELETE SET NULL"
+      ),
+      guarded_constraint(
+        prefix,
+        "phoenix_kit_doc_templates",
+        "phoenix_kit_doc_templates_type_uuid_fkey",
+        "ALTER TABLE #{p}phoenix_kit_doc_templates ADD CONSTRAINT phoenix_kit_doc_templates_type_uuid_fkey FOREIGN KEY (type_uuid) REFERENCES #{p}phoenix_kit_doc_types(uuid) ON DELETE SET NULL"
+      ),
+      guarded_constraint(
+        prefix,
+        "phoenix_kit_doc_types",
+        "phoenix_kit_doc_types_category_uuid_fkey",
+        "ALTER TABLE #{p}phoenix_kit_doc_types ADD CONSTRAINT phoenix_kit_doc_types_category_uuid_fkey FOREIGN KEY (category_uuid) REFERENCES #{p}phoenix_kit_doc_categories(uuid) ON DELETE CASCADE"
+      )
+    ]
+  end
+
+  defp adoption_indexes(p) do
+    [
+      "CREATE INDEX IF NOT EXISTS phoenix_kit_doc_categories_position_index ON #{p}phoenix_kit_doc_categories USING btree (\"position\")",
+      "CREATE INDEX IF NOT EXISTS phoenix_kit_doc_categories_status_index ON #{p}phoenix_kit_doc_categories USING btree (status)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS phoenix_kit_doc_document_sections_doc_position_index ON #{p}phoenix_kit_doc_document_sections USING btree (document_uuid, \"position\")",
+      "CREATE INDEX IF NOT EXISTS phoenix_kit_doc_document_sections_document_uuid_index ON #{p}phoenix_kit_doc_document_sections USING btree (document_uuid)",
+      "CREATE INDEX IF NOT EXISTS phoenix_kit_doc_documents_category_uuid_index ON #{p}phoenix_kit_doc_documents USING btree (category_uuid)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS phoenix_kit_doc_documents_google_doc_id_unique_idx ON #{p}phoenix_kit_doc_documents USING btree (google_doc_id) WHERE (google_doc_id IS NOT NULL)",
+      "CREATE INDEX IF NOT EXISTS phoenix_kit_doc_documents_status_index ON #{p}phoenix_kit_doc_documents USING btree (status)",
+      "CREATE INDEX IF NOT EXISTS phoenix_kit_doc_documents_template_uuid_index ON #{p}phoenix_kit_doc_documents USING btree (template_uuid)",
+      "CREATE INDEX IF NOT EXISTS phoenix_kit_doc_documents_type_uuid_index ON #{p}phoenix_kit_doc_documents USING btree (type_uuid)",
+      "CREATE INDEX IF NOT EXISTS phoenix_kit_doc_headers_footers_type_index ON #{p}phoenix_kit_doc_headers_footers USING btree (type)",
+      "CREATE INDEX IF NOT EXISTS phoenix_kit_doc_template_presets_scope_index ON #{p}phoenix_kit_doc_template_presets USING btree (scope_type, scope_id)",
+      "CREATE INDEX IF NOT EXISTS phoenix_kit_doc_templates_category_uuid_index ON #{p}phoenix_kit_doc_templates USING btree (category_uuid)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS phoenix_kit_doc_templates_google_doc_id_unique_idx ON #{p}phoenix_kit_doc_templates USING btree (google_doc_id) WHERE (google_doc_id IS NOT NULL)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS phoenix_kit_doc_templates_slug_index ON #{p}phoenix_kit_doc_templates USING btree (slug)",
+      "CREATE INDEX IF NOT EXISTS phoenix_kit_doc_templates_status_index ON #{p}phoenix_kit_doc_templates USING btree (status)",
+      "CREATE INDEX IF NOT EXISTS phoenix_kit_doc_templates_type_uuid_index ON #{p}phoenix_kit_doc_templates USING btree (type_uuid)",
+      "CREATE INDEX IF NOT EXISTS phoenix_kit_doc_types_category_uuid_position_index ON #{p}phoenix_kit_doc_types USING btree (category_uuid, \"position\")",
+      "CREATE INDEX IF NOT EXISTS phoenix_kit_doc_types_status_index ON #{p}phoenix_kit_doc_types USING btree (status)"
+    ]
+  end
+
+  defp guarded_constraint(prefix, table, constraint_name, add_sql) do
+    """
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint c
+        JOIN pg_class t ON t.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE c.conname = '#{constraint_name}'
+          AND t.relname = '#{table}'
+          AND n.nspname = '#{prefix}'
+      ) THEN
+        #{add_sql};
+      END IF;
+    END
+    $$
+    """
   end
 
   defp v1_project_link(p) do

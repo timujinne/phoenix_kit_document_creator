@@ -1,11 +1,37 @@
-## 0.9.15 - 2026-10-17
+## Unreleased
+
+### Changed
+
+- The migration chain is now V3 and adopts the seven `phoenix_kit_doc_*`
+  tables core's V135 baseline creates for this module (categories, types,
+  templates, documents, document sections, headers/footers, template presets):
+  `CREATE TABLE IF NOT EXISTS`, guarded constraints and indexes, identical to
+  what a fresh core builds. A no-op on every existing install; the adoption
+  runs first in `up/1`, ahead of V1 and V2, which touch those tables. `down/1`
+  never drops them. With it the chain builds all eight tables without core
+  (`test/integration/migrations_build_alone_test.exs`, core's
+  `ModuleChainCheck`). See core's
+  `dev_docs/plans/2026-10-25-module-table-ownership.md`.
+
+## 0.9.15 - 2026-10-24
 
 ### Changed
 
 - Requires `phoenix_kit` `>= 2.43.0 and < 3.0.0`, the first core that
-  compiles on Erlang/OTP 28. The locked core moves to 2.62.2, and the
-  compat shims around `Integrations.find_uuid_by_provider_name/1` are gone.
+  compiles on Erlang/OTP 28. The compat shims around
+  `Integrations.find_uuid_by_provider_name/1` are gone.
+- Dependency refresh: `phoenix_kit` 2.64.1 and its transitive set.
 - `migrate_legacy/0` carries `@impl PhoenixKit.Module`.
+- Comments, docs and two Categories-page strings use neutral host-application
+  wording (#64): the confirm dialog now reads "Create the standard groups
+  (Hinnapakkumine … Hooldusjuhend) in this category, in order? …" and the
+  button title "Seed the standard group order". Both strings had no
+  translations yet, so none were lost.
+- The deprecation `COMMENT` on the legacy `phoenix_kit_doc_templates`
+  `category_uuid`/`type_uuid` columns uses the same neutral wording on fresh
+  installs. Existing databases keep the old text, since V2 is not re-run. Both
+  versions carry the "deprecated … do not drop" warning, and the chain
+  version is unchanged.
 
 ### Fixed
 

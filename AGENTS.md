@@ -351,20 +351,21 @@ Every table is `phoenix_kit_doc_*`, UUIDv7 keys, schema-prefix aware.
 
 Owns a versioned chain: `PhoenixKitDocumentCreator.Migrations.Schema` via
 `migration_module/0`, marker `dcr_schema:<N>` as a `COMMENT ON` the
-`phoenix_kit_doc_documents` table, currently V2. `mix phoenix_kit.update`
+`phoenix_kit_doc_documents` table, currently V3. `mix phoenix_kit.update`
 applies it in hosts; tests run it through
 `PhoenixKitDocumentCreator.Test.SchemaMigration`, keyed on
 `current_version/0`.
 
-The `phoenix_kit_doc_*` **tables themselves are created by core** (the V135
-squash baseline), including the `status` indexes on templates and documents,
-the partial-unique `google_doc_id` indexes and the taxonomy tables. This chain
-only iterates on that shape:
+Core's V135 squash baseline still creates seven of the eight `phoenix_kit_doc_*`
+tables; V3 re-states them, so this chain builds every table without core and
+owns their shape. A change to one is a new version here, never a core migration
+(core refuses them since V223).
 
 | Version | Change |
 |---|---|
 | V1 | `phoenix_kit_doc_documents.project_uuid` — nullable FK to `phoenix_kit_projects(uuid)`, `ON DELETE SET NULL`, plus its index. Purely additive. |
 | V2 | `phoenix_kit_doc_template_taxonomy` join table (template × category, optional group), its unique and lookup indexes, and a backfill of one row per template that had a `category_uuid`. Stamps the legacy `templates.category_uuid` / `type_uuid` columns with a deprecation `COMMENT`; they stay populated as a mirror of the primary membership. |
+| V3 | Adoption of the seven core-created tables (categories, types, templates, documents, document_sections, headers_footers, template_presets), exactly as a fresh core builds them. **Emitted first in `up/1`**, ahead of V1/V2, which alter and reference them. No-op on existing installs; `down/1` never drops. |
 
 Rules for the chain:
 
@@ -381,9 +382,7 @@ Rules for the chain:
   later `up` re-backfills from that one column alone.
 - The schema prefix is interpolated into raw DDL, so it goes through
   `validated_prefix/1` (`^[a-zA-Z_][a-zA-Z0-9_]*$`) first.
-- A shape change to a core-created column is a core migration first, then a
-  schema edit here. A new column or table that belongs to this module is a new
-  version in this chain — bump `@current_version` in the same commit.
+- A new column or table, or a shape change, is a new version in this chain — bump `@current_version` in the same commit.
 
 ## Testing
 
@@ -466,7 +465,7 @@ publish has succeeded.
 
 ## Pull requests & commits
 
-- Commit messages start with an action verb (`Add`, `Update`, `Fix`, `Remove`, `Merge`). No AI attribution and no `Co-Authored-By` trailers.
+- Commit messages start with an action verb (`Add`, `Update`, `Fix`, `Remove`, `Merge`).
 - Version bumps and CHANGELOG entries land with the release commit on upstream, not in feature PRs.
 - Review files live in `dev_docs/pull_requests/{year}/{pr_number}-{slug}/{AGENT}_REVIEW.md`, one file per reviewing agent, never edited by another agent; `FOLLOW_UP.md` records how each finding was resolved. Severities: `BUG - CRITICAL/HIGH/MEDIUM`, `IMPROVEMENT - HIGH/MEDIUM`, `NITPICK`.
 
@@ -477,7 +476,7 @@ publish has succeeded.
   queries are `WHERE status IN (…) ORDER BY inserted_at DESC` on every mount and
   sync — with recursive walking, consumers using nested subfolders surface far
   more rows. Add `phoenix_kit_doc_documents (inserted_at DESC)` and
-  `phoenix_kit_doc_templates (inserted_at DESC)` as V3 of **this module's**
+  `phoenix_kit_doc_templates (inserted_at DESC)` as the next version of **this module's**
   chain. Unblocked now; do it next time the chain is bumped for another reason.
 - **Store Drive's real `modifiedTime` and sort by it.**
   `Documents.schema_to_file_map/1` exposes the DB `updated_at` as
