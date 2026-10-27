@@ -19,11 +19,22 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLiveTest do
     # Drive HTTP stub, see C12 punt list).
 
     test "documents URL renders the empty-state card", %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, _view, html} = live(conn, "/en/admin/document-creator")
 
       assert html =~ "Google Account Not Connected"
       # Settings link in the empty-state CTA.
+      assert html =~ "/en/admin/settings/document-creator"
+    end
+
+    test "the empty state offers Settings only to someone who may open it", %{conn: conn} do
+      base_only = put_test_scope(conn, fake_scope(roles: [], permissions: ["document_creator"]))
+      {:ok, _view, html} = live(base_only, "/en/admin/document-creator")
+      assert html =~ "Google Account Not Connected"
+      refute html =~ "/en/admin/settings/document-creator"
+
+      holder = put_test_scope(conn, settings_scope(roles: []))
+      {:ok, _view, html} = live(holder, "/en/admin/document-creator")
       assert html =~ "/en/admin/settings/document-creator"
     end
 

@@ -86,6 +86,13 @@ defmodule PhoenixKitDocumentCreator do
   # `project_uuid` for the projects hub's Documents tab.
   def migration_module, do: PhoenixKitDocumentCreator.Migrations.Schema
 
+  @doc """
+  The manifest of this module's tables, for `mix phoenix_kit.repair` and
+  `mix phoenix_kit.doctor`; see `PhoenixKitDocumentCreator.ExpectedSchema`.
+  """
+  # No `@impl`, so this compiles against a core that lacks the callback.
+  def expected_schema, do: PhoenixKitDocumentCreator.ExpectedSchema
+
   # Project-extension catalog entry for the `phoenix_kit_projects` hub —
   # duck-typed contract (no dependency on that package, no `@impl`).
   # Linkage is PER-DOCUMENT (documents.project_uuid, V1 of this module's
@@ -118,9 +125,28 @@ defmodule PhoenixKitDocumentCreator do
       key: module_key(),
       label: "Document Creator",
       icon: "hero-document-text",
-      description: "Visual template design and PDF generation"
+      description: "Visual template design and PDF generation",
+      sub_permissions: [
+        # The settings page repoints the module at a Google integration,
+        # browses that account's Drive and moves the managed folders — more
+        # than the everyday key should carry. `migrate_legacy/0` grants it
+        # once to every role that held the base key before it existed.
+        %{
+          key: "settings",
+          label: "Change Document Creator settings",
+          description:
+            "Choose the Google account the module uses, browse its Drive and change the managed folders"
+        }
+      ]
     }
   end
+
+  @doc """
+  The composed key of the settings sub-permission, for `Scope.can?/2`.
+  Gates `Web.GoogleOAuthSettingsLive` at mount and on every event.
+  """
+  @spec settings_permission() :: String.t()
+  def settings_permission, do: module_key() <> ".settings"
 
   @impl PhoenixKit.Module
   def css_sources, do: [:phoenix_kit_document_creator]
@@ -145,7 +171,7 @@ defmodule PhoenixKitDocumentCreator do
         priority: 930,
         level: :admin,
         parent: :admin_settings,
-        permission: module_key(),
+        permission: settings_permission(),
         match: :exact,
         live_view: {PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive, :index},
         gettext_backend: PhoenixKitDocumentCreator.Gettext,
@@ -236,11 +262,13 @@ defmodule PhoenixKitDocumentCreator do
   def migrate_legacy do
     creds_result = migrate_legacy_oauth_credentials()
     refs_result = migrate_legacy_connection_references()
+    settings_result = backfill_settings_permission()
 
     {:ok,
      %{
        credentials_migration: creds_result,
-       reference_migration: refs_result
+       reference_migration: refs_result,
+       settings_permission_backfill: settings_result
      }}
   rescue
     e ->
@@ -532,6 +560,90 @@ defmodule PhoenixKitDocumentCreator do
       updated,
       module_key()
     )
+  end
+
+  # Set once the settings sub-permission has been carried to the roles that
+  # held the base key before it existed, so it never runs again and an
+  # Owner's revoke sticks.
+  @settings_backfill_key "document_creator_settings_backfilled"
+
+  @doc false
+  # Once: every role that already holds `document_creator` keeps the
+  # settings page it could reach before `document_creator.settings` was
+  # split out. A role created or granted the base key later gets the narrow
+  # meaning. The flag is set only after every grant succeeded, so a failed
+  # pass is retried on the next boot.
+  def backfill_settings_permission do
+    if Settings.get_setting(@settings_backfill_key) == "true" do
+      :already_backfilled
+    else
+      do_backfill_settings_permission()
+    end
+  end
+
+  defp do_backfill_settings_permission do
+    alias PhoenixKit.Users.Permissions
+
+    key = settings_permission()
+
+    with {:ok, role_uuids} <- roles_lacking(module_key(), key),
+         results = Enum.map(role_uuids, &Permissions.grant_permission(&1, key, nil)),
+         true <- Enum.all?(results, &match?({:ok, _}, &1)),
+         {:ok, _} <-
+           Settings.update_setting_with_module(@settings_backfill_key, "true", module_key()) do
+      :backfilled
+    else
+      {:error, :lookup_failed} = error ->
+        Logger.warning(
+          "[DocumentCreator] settings permission backfill could not read grants; retrying"
+        )
+
+        error
+
+      _ ->
+        Logger.warning(
+          "[DocumentCreator] settings permission backfill incomplete; retrying next boot"
+        )
+
+        {:error, :grant_failed}
+    end
+  rescue
+    e ->
+      Logger.warning(
+        "[DocumentCreator] settings permission backfill raised: exception=#{inspect(e.__struct__)}"
+      )
+
+      {:error, :backfill_failed}
+  end
+
+  # Roles holding `base` but not `key`, read with a query that RAISES on a
+  # database error. Core's `Permissions.get_permissions_for_role/1` rescues
+  # to `[]`, which would read as "nobody holds the base key" and set the
+  # flag for good.
+  @doc false
+  def roles_lacking(base, key) do
+    import Ecto.Query, only: [from: 2]
+
+    repo = PhoenixKit.RepoHelper.repo()
+
+    holders =
+      from(rp in PhoenixKit.Users.RolePermission,
+        where: rp.module_key == ^base,
+        select: rp.role_uuid
+      )
+      |> repo.all()
+
+    have =
+      from(rp in PhoenixKit.Users.RolePermission,
+        where: rp.module_key == ^key,
+        select: rp.role_uuid
+      )
+      |> repo.all()
+      |> MapSet.new()
+
+    {:ok, holders |> Enum.uniq() |> Enum.reject(&MapSet.member?(have, &1))}
+  rescue
+    _ -> {:error, :lookup_failed}
   end
 
   # Core's log never raises: a missing activities table (host hasn't run

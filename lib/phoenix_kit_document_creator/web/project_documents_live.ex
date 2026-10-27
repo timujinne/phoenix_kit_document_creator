@@ -12,7 +12,10 @@ defmodule PhoenixKitDocumentCreator.Web.ProjectDocumentsLive do
 
   Hub session contract (see `PhoenixKitHelloWorld.Web.ProjectHelloTabLive`):
   off-router mount, no `handle_params/3`; `"can_write"` (HOST-resolved
-  authorization) gates attach/detach. Every read rescues to an empty
+  authorization) gates attach/detach. Both events also check the document
+  itself: attach takes only an unlinked document (one this tab offers),
+  detach only a document linked to this tab's project — `can_write` is
+  about this project, never about another project's documents. Every read rescues to an empty
   state — a provider hiccup must never crash the host project page.
   """
 
@@ -39,7 +42,7 @@ defmodule PhoenixKitDocumentCreator.Web.ProjectDocumentsLive do
   def handle_event("attach", %{"document_uuid" => doc_uuid}, socket) do
     with true <- socket.assigns.can_write,
          uuid when is_binary(uuid) <- socket.assigns.project_uuid,
-         {:ok, _} <- safe(fn -> Documents.set_document_project(doc_uuid, uuid) end) do
+         {:ok, _} <- safe(fn -> Documents.attach_document_to_project(doc_uuid, uuid) end) do
       {:noreply, reload(socket)}
     else
       _ -> {:noreply, socket}
@@ -48,7 +51,9 @@ defmodule PhoenixKitDocumentCreator.Web.ProjectDocumentsLive do
 
   def handle_event("detach", %{"document_uuid" => doc_uuid}, socket) do
     with true <- socket.assigns.can_write,
-         {:ok, _} <- safe(fn -> Documents.set_document_project(doc_uuid, nil) end) do
+         uuid when is_binary(uuid) <- socket.assigns.project_uuid,
+         {:ok, _} <-
+           safe(fn -> Documents.detach_document_from_project(doc_uuid, uuid) end) do
       {:noreply, reload(socket)}
     else
       _ -> {:noreply, socket}

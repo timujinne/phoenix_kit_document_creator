@@ -1171,7 +1171,16 @@ defmodule PhoenixKitDocumentCreator.Web.DocumentsLive do
                 "The Document Creator uses Google Docs for editing and Google Drive for storage. Connect a Google account in Settings to get started."
               )}
             </p>
-            <div class="card-actions mt-4">
+            <%!-- Only for someone the settings page will let in. --%>
+            <div
+              :if={
+                PhoenixKit.Users.Auth.Scope.can?(
+                  assigns[:phoenix_kit_current_scope],
+                  PhoenixKitDocumentCreator.settings_permission()
+                )
+              }
+              class="card-actions mt-4"
+            >
               <a href={settings_path()} class="btn btn-primary btn-sm">
                 <span class="hero-cog-6-tooth w-4 h-4" /> {gettext("Go to Settings")}
               </a>

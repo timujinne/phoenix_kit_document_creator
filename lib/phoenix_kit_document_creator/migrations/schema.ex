@@ -25,8 +25,9 @@ defmodule PhoenixKitDocumentCreator.Migrations.Schema do
 
     * **V1** — `phoenix_kit_doc_documents.project_uuid` (nullable FK →
       `phoenix_kit_projects`, ON DELETE SET NULL): real per-project
-      document linkage for the projects hub's Documents tab. The FK
-      target is core-created (V101), present on every current install.
+      document linkage for the projects hub's Documents tab. The FK is
+      added only where `phoenix_kit_projects` exists (that package owns the
+      table; this one does not depend on it); without it the column stays plain.
     * **V2** — `phoenix_kit_doc_template_taxonomy` join table: a template's
       membership in one category, with an optional group (`type_uuid`).
       Replaces the single `category_uuid`/`type_uuid` FKs on
@@ -447,7 +448,28 @@ defmodule PhoenixKitDocumentCreator.Migrations.Schema do
     execute("""
     ALTER TABLE #{p}phoenix_kit_doc_documents
     ADD COLUMN IF NOT EXISTS project_uuid UUID
-      REFERENCES #{p}phoenix_kit_projects(uuid) ON DELETE SET NULL
+    """)
+
+    # `phoenix_kit_projects` is another package's table and this one does not
+    # depend on it, so the foreign key is added only where that table exists
+    # (a host without projects keeps the plain column). Re-running the chain
+    # after projects is installed adds it.
+    execute("""
+    DO $$
+    BEGIN
+      IF to_regclass('#{p}phoenix_kit_projects') IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM pg_constraint
+           WHERE conrelid = '#{p}phoenix_kit_doc_documents'::regclass
+             AND conname = 'phoenix_kit_doc_documents_project_uuid_fkey'
+         ) THEN
+        ALTER TABLE #{p}phoenix_kit_doc_documents
+          ADD CONSTRAINT phoenix_kit_doc_documents_project_uuid_fkey
+          FOREIGN KEY (project_uuid) REFERENCES #{p}phoenix_kit_projects(uuid)
+          ON DELETE SET NULL;
+      END IF;
+    END
+    $$
     """)
 
     execute("""

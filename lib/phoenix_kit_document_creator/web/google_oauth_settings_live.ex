@@ -3,7 +3,13 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
   Settings page for the Document Creator module.
 
   Google account connection is now managed centrally in
-  Settings → Integrations. This page handles folder configuration only.
+  Settings → Integrations. This page picks which connection the module
+  uses and configures its Drive folders.
+
+  Gated on `document_creator.settings` (`PhoenixKitDocumentCreator.settings_permission/0`),
+  not the everyday `document_creator` key: a viewer without it is sent back
+  to the module at mount, and every event re-checks the live scope, because
+  a hidden page does not stop a crafted event.
   """
   use Phoenix.LiveView
   use Gettext, backend: PhoenixKitDocumentCreator.Gettext
@@ -14,6 +20,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
 
   alias PhoenixKit.Integrations
   alias PhoenixKit.Settings
+  alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKitDocumentCreator.Documents
   alias PhoenixKitDocumentCreator.GoogleDocsClient
   alias PhoenixKitDocumentCreator.Paths
@@ -21,6 +28,14 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
 
   @impl true
   def mount(_params, _session, socket) do
+    if can_manage_settings?(socket) do
+      mount_settings(socket)
+    else
+      {:ok, refuse(socket)}
+    end
+  end
+
+  defp mount_settings(socket) do
     # Disconnected mount renders a fast empty shell; the connected mount
     # triggers `:load_settings` which performs the actual DB / Settings
     # reads. Without this gate, the four-call burst (folder_config /
@@ -115,8 +130,35 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
 
   # ── Events ─────────────────────────────────────────────────────────
 
+  # Every event — repointing the integration, saving or moving folders,
+  # browsing the Drive — is re-checked against the live scope, not a mount
+  # assign: the scope can lose the grant while the page is open.
   @impl true
-  def handle_event("select_connection", %{"uuid" => connection_key}, socket) do
+  def handle_event(event, params, socket) do
+    if can_manage_settings?(socket) do
+      settings_event(event, params, socket)
+    else
+      {:noreply, refuse(socket)}
+    end
+  end
+
+  defp can_manage_settings?(socket) do
+    Scope.can?(
+      socket.assigns[:phoenix_kit_current_scope],
+      PhoenixKitDocumentCreator.settings_permission()
+    )
+  end
+
+  defp refuse(socket) do
+    socket
+    |> put_flash(
+      :error,
+      gettext("You do not have permission to change Document Creator settings.")
+    )
+    |> push_navigate(to: Paths.index())
+  end
+
+  defp settings_event("select_connection", %{"uuid" => connection_key}, socket) do
     # Save the selected connection to document_creator settings
     dc_settings = Settings.get_json_setting("document_creator_settings", %{})
     updated = Map.put(dc_settings, "google_connection", connection_key)
@@ -157,7 +199,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
      )}
   end
 
-  def handle_event("save_folders", params, socket) do
+  defp settings_event("save_folders", params, socket) do
     folder_data = Settings.get_json_setting(GoogleDocsClient.folder_settings_key(), %{})
     new = folder_params(params)
     changed = Map.take(folder_data, Map.keys(new)) != new
@@ -180,11 +222,11 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
     {:noreply, assign_folder_settings(socket, new, root_changed)}
   end
 
-  def handle_event("skip_migration", _params, socket) do
+  defp settings_event("skip_migration", _params, socket) do
     {:noreply, assign(socket, migration_needed: false)}
   end
 
-  def handle_event("migrate_folders", _params, socket) do
+  defp settings_event("migrate_folders", _params, socket) do
     root_name = socket.assigns.root_name
     root_path = socket.assigns.root_path || ""
     root_abs = if root_path != "", do: "#{root_path}/#{root_name}", else: root_name
@@ -204,8 +246,8 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
 
   @valid_path_fields ~w(root_path templates_path documents_path deleted_path)
 
-  def handle_event("browse_folder", %{"field" => field}, socket)
-      when field in @valid_path_fields do
+  defp settings_event("browse_folder", %{"field" => field}, socket)
+       when field in @valid_path_fields do
     send(self(), {:load_drive_folders, "root"})
 
     {:noreply,
@@ -218,17 +260,17 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
      )}
   end
 
-  def handle_event("browse_folder", _params, socket) do
+  defp settings_event("browse_folder", _params, socket) do
     {:noreply, socket}
   end
 
-  def handle_event("browser_navigate", %{"id" => folder_id, "name" => name}, socket) do
+  defp settings_event("browser_navigate", %{"id" => folder_id, "name" => name}, socket) do
     send(self(), {:load_drive_folders, folder_id})
     path = socket.assigns.browser_path ++ [%{id: folder_id, name: name}]
     {:noreply, assign(socket, browser_path: path, browser_folders: [], browser_loading: true)}
   end
 
-  def handle_event("browser_back", %{"index" => index}, socket) do
+  defp settings_event("browser_back", %{"index" => index}, socket) do
     index =
       case Integer.parse(index) do
         {n, _} -> n
@@ -247,7 +289,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
     end
   end
 
-  def handle_event("browser_select", _params, socket) do
+  defp settings_event("browser_select", _params, socket) do
     path =
       socket.assigns.browser_path
       |> Enum.drop(1)
@@ -263,11 +305,11 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive do
     end
   end
 
-  def handle_event("browser_close", _params, socket) do
+  defp settings_event("browser_close", _params, socket) do
     {:noreply, assign(socket, browser_open: false)}
   end
 
-  def handle_event("dismiss", _params, socket) do
+  defp settings_event("dismiss", _params, socket) do
     {:noreply, assign(socket, success: nil, error: nil)}
   end
 

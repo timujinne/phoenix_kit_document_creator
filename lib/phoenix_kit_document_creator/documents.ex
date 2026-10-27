@@ -1348,6 +1348,83 @@ defmodule PhoenixKitDocumentCreator.Documents do
     end
   end
 
+  @doc """
+  Links an attach candidate to a project: only a document that has no
+  project yet and would be listed by `list_unlinked_documents/0`. A
+  document already linked to another project is refused with
+  `{:error, :not_attachable}` rather than moved, so a crafted event from
+  one project's tab cannot take another project's document.
+  """
+  @spec attach_document_to_project(String.t(), String.t()) ::
+          {:ok, map()} | {:error, term()}
+  def attach_document_to_project(document_uuid, project_uuid)
+      when is_binary(document_uuid) and is_binary(project_uuid) do
+    import Ecto.Query
+
+    relink(
+      document_uuid,
+      fn query ->
+        where(
+          query,
+          [d],
+          is_nil(d.project_uuid) and d.status in ["published", "lost", "unfiled"] and
+            not is_nil(d.google_doc_id)
+        )
+      end,
+      project_uuid,
+      :not_attachable
+    )
+  end
+
+  @doc """
+  Unlinks a document from `project_uuid` — only when it is linked to that
+  project. A document on another project (or none) is refused with
+  `{:error, :not_linked}`.
+  """
+  @spec detach_document_from_project(String.t(), String.t()) ::
+          {:ok, map()} | {:error, term()}
+  def detach_document_from_project(document_uuid, project_uuid)
+      when is_binary(document_uuid) and is_binary(project_uuid) do
+    import Ecto.Query
+
+    relink(
+      document_uuid,
+      fn query -> where(query, [d], d.project_uuid == ^project_uuid) end,
+      nil,
+      :not_linked
+    )
+  end
+
+  # Reads the row under a lock with the precondition in the WHERE, so two
+  # tabs racing an attach cannot both win.
+  defp relink(document_uuid, precondition, new_project_uuid, refusal) do
+    import Ecto.Query
+
+    with {:ok, uuid} <- Ecto.UUID.cast(document_uuid),
+         {:ok, updated} <-
+           repo().transaction(fn ->
+             from(d in Document, where: d.uuid == ^uuid, lock: "FOR UPDATE")
+             |> precondition.()
+             |> repo().one()
+             |> relink_locked(new_project_uuid, refusal)
+           end) do
+      broadcast_files_changed()
+      {:ok, schema_to_file_map(updated)}
+    else
+      :error -> {:error, refusal}
+      {:error, _} = err -> err
+    end
+  end
+
+  defp relink_locked(nil, _new_project_uuid, refusal), do: repo().rollback(refusal)
+
+  defp relink_locked(document, new_project_uuid, _refusal) do
+    case document |> Document.changeset(%{project_uuid: new_project_uuid}) |> repo().update() do
+      {:ok, updated} -> updated
+      {:error, changeset} -> repo().rollback(changeset)
+    end
+  end
+
   defp put_if_present(attrs, source, key) do
     if Map.has_key?(source, key),
       do: Map.put(attrs, key, Map.get(source, key)),

@@ -53,7 +53,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
 
   describe "mount" do
     test "renders the settings page header", %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, _view, html} = live(conn, "/en/admin/settings/document-creator")
 
       assert html =~ "Document Creator Settings"
@@ -74,7 +74,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
 
     test "an unexpected message does not crash the LiveView and logs at :debug",
          %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       log =
@@ -93,7 +93,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
   describe "handle_event coverage" do
     test "save_folders persists trimmed folder paths and surfaces success flash",
          %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       render_change(view, "save_folders", %{
@@ -114,7 +114,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
 
     test "save_folders without changes is a no-op (no activity log)",
          %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       # Submit the same default values twice — second call sees no diff.
@@ -132,7 +132,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
 
     test "browse_folder with a valid field opens the browser modal",
          %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       render_click(view, "browse_folder", %{"field" => "templates_path"})
@@ -151,7 +151,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
 
     test "browse_folder ignores invalid field (no modal)",
          %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       render_click(view, "browse_folder", %{"field" => "evil_path"})
@@ -161,7 +161,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
 
     test "browser_navigate appends to path and triggers reload",
          %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       # Open browser first.
@@ -180,7 +180,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
 
     test "browser_back trims the path back to the index",
          %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       render_click(view, "browse_folder", %{"field" => "documents_path"})
@@ -198,7 +198,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
 
     test "browser_back clamps invalid index input to a sane value",
          %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       render_click(view, "browse_folder", %{"field" => "documents_path"})
@@ -211,7 +211,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
 
     test "browser_select with valid field commits the path to the form",
          %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       render_click(view, "browse_folder", %{"field" => "templates_path"})
@@ -225,7 +225,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
 
     test "browser_close just closes the modal without committing",
          %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       render_click(view, "browse_folder", %{"field" => "templates_path"})
@@ -236,7 +236,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
 
     test "dismiss clears success/error flash assigns",
          %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       :sys.replace_state(view.pid, fn state ->
@@ -273,7 +273,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
 
     test "extracts connected_email from metadata when integration is configured",
          %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, _view, html} = live(conn, "/en/admin/settings/document-creator")
 
       assert is_binary(html)
@@ -284,7 +284,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
   describe "select_connection event" do
     test "switches the active connection and logs settings.connection_changed",
          %{conn: conn} do
-      scope = fake_scope()
+      scope = settings_scope()
       actor_uuid = scope.user.uuid
 
       # Seed a target connection in settings.
@@ -316,7 +316,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
   describe "load_drive_folders handle_info chain" do
     test ":load_drive_folders followed by :drive_folders_loaded updates state",
          %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       # Open the browser modal (sets browser_open=true, triggers a
@@ -334,7 +334,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
 
   describe "root folder" do
     test "save_folders persists root folder path and name", %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       render_change(view, "save_folders", %{
@@ -355,7 +355,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
     end
 
     test "browse_folder with root_path field opens the browser modal", %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       render_click(view, "browse_folder", %{"field" => "root_path"})
@@ -367,7 +367,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
 
     test "migration banner appears when root name changes",
          %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       render_change(view, "save_folders", %{
@@ -385,7 +385,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
     end
 
     test "skip_migration dismisses the banner", %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       render_change(view, "save_folders", %{
@@ -409,7 +409,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
       # (V114+), so seed a real connection row + point the module setting at it.
       seed_connected_google_integration!()
 
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       render_change(view, "save_folders", %{
@@ -428,7 +428,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
     end
 
     test "access reminder is not visible when root name is empty", %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       html = render(view)
@@ -436,7 +436,7 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
     end
 
     test "save_folders with non-empty root_name does not crash", %{conn: conn} do
-      conn = put_test_scope(conn, fake_scope())
+      conn = put_test_scope(conn, settings_scope())
       {:ok, view, _html} = live(conn, "/en/admin/settings/document-creator")
 
       render_change(view, "save_folders", %{
@@ -451,6 +451,69 @@ defmodule PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLiveTest do
       })
 
       assert :sys.get_state(view.pid).socket.assigns.success =~ "saved"
+    end
+  end
+
+  describe "document_creator.settings permission" do
+    @settings_path "/en/admin/settings/document-creator"
+
+    test "the base key alone is refused at mount", %{conn: conn} do
+      _ = settings_scope()
+      conn = put_test_scope(conn, fake_scope(permissions: ["document_creator"]))
+
+      assert {:error, {:live_redirect, %{to: to, flash: flash}}} = live(conn, @settings_path)
+      assert to == "/en/admin/document-creator"
+      assert flash["error"] =~ "permission"
+    end
+
+    test "the settings sub-key holder mounts", %{conn: conn} do
+      conn = put_test_scope(conn, settings_scope())
+      assert {:ok, _view, html} = live(conn, @settings_path)
+      assert html =~ "Document Creator Settings"
+    end
+
+    # Each write the page offers, crafted after the grant is gone: the
+    # handler must re-check the live scope, not the mount decision.
+    for {event, params} <- [
+          {"select_connection", %{"uuid" => "01900000-0000-7000-8000-000000000000"}},
+          {"save_folders",
+           %{
+             "root_path" => "",
+             "root_name" => "taken-over",
+             "templates_path" => "",
+             "templates_name" => "t",
+             "documents_path" => "",
+             "documents_name" => "d",
+             "deleted_path" => "",
+             "deleted_name" => "x"
+           }},
+          {"migrate_folders", %{}},
+          {"browse_folder", %{"field" => "root_path"}},
+          {"browser_navigate", %{"id" => "some-folder", "name" => "Some"}},
+          {"browser_select", %{}}
+        ] do
+      test "#{event} is refused once the scope lacks the sub-key", %{conn: conn} do
+        before_settings = PhoenixKit.Settings.get_json_setting("document_creator_settings", %{})
+        before_folders = PhoenixKit.Settings.get_json_setting("document_creator_folders", %{})
+
+        {:ok, view, _html} = conn |> put_test_scope(settings_scope()) |> live(@settings_path)
+        swap_scope(view, fake_scope(permissions: ["document_creator"]))
+
+        render_hook(view, unquote(event), unquote(Macro.escape(params)))
+        assert_redirect(view, "/en/admin/document-creator")
+
+        assert PhoenixKit.Settings.get_json_setting("document_creator_settings", %{}) ==
+                 before_settings
+
+        assert PhoenixKit.Settings.get_json_setting("document_creator_folders", %{}) ==
+                 before_folders
+      end
+    end
+
+    test "the tab is gated on the sub-key" do
+      [tab] = PhoenixKitDocumentCreator.settings_tabs()
+      assert tab.permission == "document_creator.settings"
+      assert {PhoenixKitDocumentCreator.Web.GoogleOAuthSettingsLive, _} = tab.live_view
     end
   end
 end

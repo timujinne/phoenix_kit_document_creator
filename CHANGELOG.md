@@ -2,6 +2,7 @@
 
 ### Changed
 
+- **The foreign key from `phoenix_kit_doc_documents.project_uuid` to `phoenix_kit_projects` is added only where that table exists.** The chain used to reference it unguarded because core created it; once core stops, a host without `phoenix_kit_projects` would have failed the chain. This package does not depend on projects (they meet through the duck-typed hub). Hosts that have projects keep the constraint; others get the plain column, and the manifest leaves the constraint out. No new version: V1 is idempotent and the column is unchanged.
 - The migration chain is now V3 and adopts the seven `phoenix_kit_doc_*`
   tables core's V135 baseline creates for this module (categories, types,
   templates, documents, document sections, headers/footers, template presets):
@@ -12,6 +13,10 @@
   (`test/integration/migrations_build_alone_test.exs`, core's
   `ModuleChainCheck`). See core's
   `dev_docs/plans/2026-10-25-module-table-ownership.md`.
+
+### Added
+
+- **The module supplies the manifest of its 8 tables** (`expected_schema/0`, `PhoenixKitDocumentCreator.ExpectedSchema`), so `mix phoenix_kit.repair` and `mix phoenix_kit.doctor` check and repair them again, now from the module's own chain instead of core's manifest. Generated from `PhoenixKitDocumentCreator.Migrations` by core's `dev_docs/squash/generate_module_manifest.exs`, never edited by hand. Core uses it from the first release after 2.64.1; before that nothing reads it. Repair is additive (it creates what is missing and reports the rest) and checks the tables only while the database is at the chain's current version. No migration.
 
 ## 0.9.15 - 2026-10-24
 

@@ -95,6 +95,35 @@ defmodule PhoenixKitDocumentCreator.LiveCase do
   end
 
   @doc """
+  A fake scope holding the base key and `document_creator.settings`, for
+  the settings page. `Scope.can?/2` honours a sub-key only while the module
+  is enabled, so this also switches the module on for the test.
+  """
+  def settings_scope(opts \\ []) do
+    {:ok, _} = PhoenixKit.Settings.update_boolean_setting("document_creator_enabled", true)
+
+    fake_scope(
+      Keyword.put_new(opts, :permissions, [
+        "document_creator",
+        PhoenixKitDocumentCreator.settings_permission()
+      ])
+    )
+  end
+
+  @doc """
+  Swaps the scope on a mounted LiveView, as core does when a role's grants
+  change while the page is open — for asserting that an event re-checks
+  the live scope rather than a mount-time decision.
+  """
+  def swap_scope(view, scope) do
+    :sys.replace_state(view.pid, fn state ->
+      %{state | socket: Phoenix.Component.assign(state.socket, :phoenix_kit_current_scope, scope)}
+    end)
+
+    :ok
+  end
+
+  @doc """
   Plugs a fake scope into the test conn's session so the test
   `:assign_scope` `on_mount` hook can put it on socket assigns at
   mount time. Pair with `fake_scope/1`.

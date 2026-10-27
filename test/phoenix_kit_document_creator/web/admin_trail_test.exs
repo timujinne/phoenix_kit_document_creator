@@ -106,7 +106,10 @@ defmodule PhoenixKitDocumentCreator.Web.AdminTrailTest do
 
   describe "settings" do
     test "the module settings page lives in Settings", %{conn: conn} do
-      assert trail(mount(conn, "/en/admin/settings/document-creator")) ==
+      {:ok, view, _html} =
+        conn |> put_test_scope(settings_scope()) |> live("/en/admin/settings/document-creator")
+
+      assert trail(view) ==
                {"Settings", "/en/admin/settings", [], "Document Creator"}
     end
   end
