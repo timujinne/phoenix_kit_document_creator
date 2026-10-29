@@ -73,6 +73,25 @@ repo_available =
       # `ensure_current/2`.
       PhoenixKit.Migration.ensure_current(TestRepo, log: false)
 
+      # Projects' tables (and the Staff and Entities tables its chain needs),
+      # built before this module's chain so the project link's guarded foreign
+      # key is added.
+      for chain <- [PhoenixKitEntities.Migrations, PhoenixKitStaff.Migrations],
+          stmt <- chain.up_statements("public") do
+        TestRepo.query!(stmt)
+      end
+
+      Ecto.Migrator.run(
+        TestRepo,
+        [
+          {20_261_027_000_000 + PhoenixKitProjects.Migrations.Schema.current_version(),
+           PhoenixKitDocumentCreator.Test.ProjectsMigration}
+        ],
+        :up,
+        all: true,
+        log: false
+      )
+
       # The module-owned chain, keyed on `Schema.current_version/0` so a
       # version bump re-applies on the next run.
       Ecto.Migrator.run(

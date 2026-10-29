@@ -90,7 +90,7 @@ defmodule PhoenixKitDocumentCreator do
   The manifest of this module's tables, for `mix phoenix_kit.repair` and
   `mix phoenix_kit.doctor`; see `PhoenixKitDocumentCreator.ExpectedSchema`.
   """
-  # No `@impl`, so this compiles against a core that lacks the callback.
+  @impl PhoenixKit.Module
   def expected_schema, do: PhoenixKitDocumentCreator.ExpectedSchema
 
   # Project-extension catalog entry for the `phoenix_kit_projects` hub —

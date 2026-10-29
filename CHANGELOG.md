@@ -1,6 +1,8 @@
-## Unreleased
+## 0.10.0 - 2026-10-27
 
 ### Changed
+
+- **Core pin widened to `>= 2.65.0 and < 4.0.0`:** works with core 3.x (core 3.0 stops creating the module tables; this module's own chain builds its tables). The floor is the first core with the `file_references/0` and `expected_schema/0` callbacks, which now carry `@impl PhoenixKit.Module`.
 
 - **The foreign key from `phoenix_kit_doc_documents.project_uuid` to `phoenix_kit_projects` is added only where that table exists.** The chain used to reference it unguarded because core created it; once core stops, a host without `phoenix_kit_projects` would have failed the chain. This package does not depend on projects (they meet through the duck-typed hub). Hosts that have projects keep the constraint; others get the plain column, and the manifest leaves the constraint out. No new version: V1 is idempotent and the column is unchanged.
 - The migration chain is now V3 and adopts the seven `phoenix_kit_doc_*`

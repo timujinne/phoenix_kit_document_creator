@@ -1,7 +1,7 @@
 defmodule PhoenixKitDocumentCreator.MixProject do
   use Mix.Project
 
-  @version "0.9.15"
+  @version "0.10.0"
   @source_url "https://github.com/BeamLabEU/phoenix_kit_document_creator"
 
   def project do
@@ -107,7 +107,16 @@ defmodule PhoenixKitDocumentCreator.MixProject do
       #     core fails to compile the package.
       # Patch-precise floor in the compound form, so every later 2.x minor
       # still satisfies it (see test/core_pin_conformance_test.exs).
-      pk_dep(:phoenix_kit, ">= 2.43.0 and < 3.0.0"),
+      # Floor 2.65.0: the first core with the `file_references/0` and `expected_schema/0`
+      # callbacks this module implements (`@impl`). The ceiling is open through core 3.x.
+      pk_dep(:phoenix_kit, ">= 2.65.0 and < 4.0.0"),
+
+      # Test-only: the project link's foreign key and the tests that link a
+      # document to a project need Projects' tables, which its own chain
+      # builds (PHOENIX_KIT_PROJECTS_PATH points at a checkout). Hosts without
+      # Projects are unaffected: the link's constraint is added only where the
+      # table exists.
+      pk_dep(:phoenix_kit_projects, "~> 0.32", only: :test),
 
       # mdex_native (pulled in transitively through phoenix_kit's mdex dep)
       # builds from source when MDEX_NATIVE_BUILD=1 is set in the
